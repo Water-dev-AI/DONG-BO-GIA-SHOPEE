@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shopee Price Sync — Đồng bộ giá</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0b0f17; --panel:#121826; --panel2:#0e1320; --line:#1f2937;
+    --line2:#2a3850; --ink:#e8eef7; --muted:#8a99b3; --faint:#5d6b85;
+    --brand:#ee4d2d; --brand2:#ff7337; --ok:#2dd4a7; --warn:#f5b544;
+    --bad:#ef5a6f; --accent:#5b8cff; --r:14px;
+    --shadow:0 18px 50px -12px rgba(0,0,0,.6);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:
+      radial-gradient(1100px 600px at 85% -10%, rgba(238,77,45,.16), transparent 60%),
+      radial-gradient(900px 500px at 0% 110%, rgba(91,140,255,.12), transparent 55%),
+      var(--bg);
+    color:var(--ink); font-family:'Inter',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased; min-height:100vh;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:34px 22px 80px}
+  header.top{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+  .logo{width:46px;height:46px;border-radius:13px;flex:none;
+    background:linear-gradient(135deg,var(--brand),var(--brand2));
+    display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:22px;color:#fff;
+    box-shadow:0 10px 30px -8px rgba(238,77,45,.6)}
+  h1{font-family:'Sora';font-weight:700;font-size:25px;margin:0;letter-spacing:-.3px}
+  .sub{color:var(--muted);font-size:13.5px;margin-top:2px}
+  .badge{margin-left:auto;font-size:11.5px;color:var(--faint);border:1px solid var(--line);
+    padding:5px 11px;border-radius:999px}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:26px}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));
+    border:1px solid var(--line);border-radius:var(--r);padding:18px;box-shadow:var(--shadow)}
+  .card h3{font-family:'Sora';font-weight:600;font-size:14.5px;margin:0 0 3px;
+    display:flex;align-items:center;gap:8px}
+  .card .hint{color:var(--faint);font-size:12px;margin:0 0 13px}
+
+  .drop{border:1.6px dashed var(--line2);border-radius:12px;padding:24px 16px;text-align:center;
+    cursor:pointer;transition:.18s;background:rgba(255,255,255,.012)}
+  .drop:hover{border-color:var(--brand);background:rgba(238,77,45,.05)}
+  .drop.has{border-style:solid;border-color:var(--ok);background:rgba(45,212,167,.06)}
+  .drop .ic{font-size:26px}
+  .drop .t{font-weight:600;font-size:13.5px;margin-top:8px}
+  .drop .f{color:var(--muted);font-size:12px;margin-top:4px;word-break:break-all}
+  .drop.has .t{color:var(--ok)}
+  input[type=file]{display:none}
+
+  .opts{margin-top:18px;background:linear-gradient(180deg,var(--panel),var(--panel2));
+    border:1px solid var(--line);border-radius:var(--r);padding:18px;box-shadow:var(--shadow)}
+  .opts h3{font-family:'Sora';font-weight:600;font-size:14.5px;margin:0 0 14px}
+  .row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media(max-width:760px){.row{grid-template-columns:1fr 1fr}}
+  .fld label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:6px;font-weight:500}
+  .fld .u{color:var(--faint);font-weight:400}
+  . in{display:flex;align-items:center;border:1px solid var(--line2);border-radius:10px;
+    background:#0a0e18;overflow:hidden}
+  .in input{border:0;background:transparent;color:var(--ink);padding:9px 11px;width:100%;
+    font-size:14px;font-family:'Inter';outline:none}
+  .in span{padding:0 11px;color:var(--faint);font-size:12.5px;border-left:1px solid var(--line)}
+  .toggle{display:flex;align-items:center;gap:10px;margin-top:16px;font-size:13px;color:var(--ink)}
+  .sw{width:42px;height:24px;border-radius:999px;background:var(--line2);position:relative;
+    cursor:pointer;transition:.18s;flex:none}
+  .sw.on{background:var(--brand)}
+  .sw::after{content:"";position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;
+    top:3px;left:3px;transition:.18s}
+  .sw.on::after{left:21px}
+  .toggle .d{color:var(--faint);font-size:11.5px}
+
+  .run{margin-top:18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  button.go{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;border:0;
+    font-family:'Sora';font-weight:600;font-size:14.5px;padding:13px 26px;border-radius:12px;
+    cursor:pointer;transition:.16s;box-shadow:0 12px 30px -10px rgba(238,77,45,.7)}
+  button.go:hover{transform:translateY(-1px)}
+  button.go:disabled{opacity:.5;cursor:not-allowed;transform:none}
+  .status{font-size:12.5px;color:var(--muted)}
+  .spinner{width:15px;height:15px;border:2px solid var(--line2);border-top-color:var(--brand);
+    border-radius:50%;display:inline-block;vertical-align:-2px;margin-right:7px;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  .results{margin-top:26px;display:none}
+  .results.show{display:block;animation:fade .4s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .stat{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
+    border-radius:12px;padding:15px 16px}
+  .stat .v{font-family:'Sora';font-weight:700;font-size:24px}
+  .stat .l{font-size:11.5px;color:var(--muted);margin-top:3px}
+  .stat.warn .v{color:var(--warn)} .stat.bad .v{color:var(--bad)} .stat.ok .v{color:var(--ok)}
+
+  .dl{display:flex;gap:12px;margin-top:18px;flex-wrap:wrap}
+  a.dlbtn{flex:1;min-width:220px;text-decoration:none;display:flex;align-items:center;gap:12px;
+    background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line2);
+    border-radius:12px;padding:15px 16px;color:var(--ink);transition:.16s}
+  a.dlbtn:hover{border-color:var(--brand);transform:translateY(-1px)}
+  a.dlbtn .ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex:none;
+    background:rgba(45,212,167,.14);color:var(--ok);font-size:18px}
+  a.dlbtn.alt .ic{background:rgba(91,140,255,.14);color:var(--accent)}
+  a.dlbtn .t{font-weight:600;font-size:13.5px} a.dlbtn .s{font-size:11.5px;color:var(--muted)}
+
+  .section{margin-top:24px}
+  .section h4{font-family:'Sora';font-weight:600;font-size:14px;margin:0 0 4px;display:flex;gap:8px;align-items:center}
+  .section .cnt{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--line);color:var(--muted)}
+  .section .cnt.bad{background:rgba(239,90,111,.18);color:var(--bad)}
+  .section .cnt.warn{background:rgba(245,181,68,.18);color:var(--warn)}
+  .tbl{margin-top:10px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .tscroll{max-height:320px;overflow:auto}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{position:sticky;top:0;background:#0c1220;color:var(--muted);font-weight:500;text-align:left;
+    padding:10px 12px;font-size:11px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:9px 12px;border-bottom:1px solid var(--line);color:var(--ink);white-space:nowrap}
+  tr:last-child td{border-bottom:0}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .up{color:var(--ok)} .down{color:var(--bad)} .mut{color:var(--faint)}
+  .pill{font-size:10.5px;padding:2px 8px;border-radius:999px;background:var(--line);color:var(--muted)}
+  .empty{padding:18px;text-align:center;color:var(--faint);font-size:12.5px}
+  .err{background:rgba(239,90,111,.1);border:1px solid var(--bad);color:#ffc9d0;
+    padding:12px 14px;border-radius:10px;font-size:13px;margin-top:14px;display:none}
+  .err.show{display:block}
+  footer{margin-top:40px;text-align:center;color:var(--faint);font-size:11.5px}
+  code{background:#0a0e18;border:1px solid var(--line);padding:1px 6px;border-radius:6px;font-size:11.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="logo">S</div>
+    <div>
+      <h1>Shopee Price Sync</h1>
+      <div class="sub">Đồng bộ giá · ràng buộc max/min 5× · làm tròn nghìn · xuất file import</div>
+    </div>
+    <div class="badge" id="engineBadge">⏳ đang tải engine…</div>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <h3>📊 File Excel Shopee</h3>
+      <p class="hint">File <code>.xlsx</code> Shopee xuất ra (data từ dòng 7). Chỉ cột Giá bị sửa.</p>
+      <label class="drop" id="dropXlsx">
+        <div class="ic">📑</div>
+        <div class="t">Kéo thả hoặc bấm chọn</div>
+        <div class="f" id="fXlsx">chưa có file</div>
+        <input type="file" id="inXlsx" accept=".xlsx">
+      </label>
+    </div>
+    <div class="card">
+      <h3>💲 Bảng giá mới (CSV)</h3>
+      <p class="hint">Cần 2 cột: <code>MÃ NỘI BỘ</code> và <code>GIÁ PEE</code>. Full list hoặc vài sản phẩm.</p>
+      <label class="drop" id="dropCsv">
+        <div class="ic">🧾</div>
+        <div class="t">Kéo thả hoặc bấm chọn</div>
+        <div class="f" id="fCsv">chưa có file</div>
+        <input type="file" id="inCsv" accept=".csv,.tsv,.txt">
+      </label>
+    </div>
+  </div>
+
+  <div class="opts">
+    <h3>⚙️ Tham số xử lý</h3>
+    <div class="row">
+      <div class="fld">
+        <label>Tăng tối đa <span class="u">(% giá)</span></label>
+        <div class="in"><input id="pUp" type="number" value="50" min="0" max="500" step="1"><span>%</span></div>
+      </div>
+      <div class="fld">
+        <label>Giảm tối đa <span class="u">(% giá)</span></label>
+        <div class="in"><input id="pDown" type="number" value="2" min="0" max="100" step="0.5"><span>%</span></div>
+      </div>
+      <div class="fld">
+        <label>Giới hạn max/min</label>
+        <div class="in"><input id="pRatio" type="number" value="5" min="1" max="50" step="0.5"><span>×</span></div>
+      </div>
+      <div class="fld">
+        <label>Làm tròn</label>
+        <div class="in"><input id="pRound" type="number" value="1000" min="1" step="1000"><span>đ</span></div>
+      </div>
+    </div>
+    <div class="toggle">
+      <div class="sw on" id="swClear"></div>
+      <div>Xoá giá sản phẩm ngoài batch
+        <div class="d">Khi CSV chỉ có vài sản phẩm — xoá giá phần còn lại để Shopee bỏ qua (chế độ partial).</div>
+      </div>
+    </div>
+    <div class="toggle">
+      <div class="sw on" id="swUnlock"></div>
+      <div>Mở khoá vùng bảo vệ
+        <div class="d">Bỏ sheet protection để import không bị chặn.</div>
+      </div>
+    </div>
+    <div class="run">
+      <button class="go" id="btnRun" disabled>▶ Xử lý &amp; tạo file</button>
+      <div class="status" id="status"></div>
+    </div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="results" id="results">
+    <div class="stats" id="stats"></div>
+    <div class="dl" id="dl"></div>
+    <div class="section" id="secUnresolved"></div>
+    <div class="section" id="secStock"></div>
+    <div class="section" id="secAdjust"></div>
+  </div>
+
+  <footer>
+    Chạy hoàn toàn trên trình duyệt (Pyodide + openpyxl) — không gửi dữ liệu lên server.<br>
+    Mã nguồn mở · có thể host miễn phí trên GitHub Pages.
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+let pyodide=null, files={xlsx:null,csv:null}, lastResult=null;
+const opts={clear:true,unlock:true};
+
+// toggles
+function bindSw(id,key){const el=$(id);el.onclick=()=>{el.classList.toggle('on');opts[key]=el.classList.contains('on')}}
+bindSw('#swClear','clear');bindSw('#swUnlock','unlock');
+
+// file inputs
+function bindDrop(dropId,inputId,key,kind){
+  const drop=$(dropId),inp=$(inputId);
+  inp.onchange=e=>{const f=e.target.files[0];if(f)setFile(f,key,kind,drop)};
+  drop.ondragover=e=>{e.preventDefault();drop.style.borderColor='var(--brand)'};
+  drop.ondragleave=()=>{drop.style.borderColor=''};
+  drop.ondrop=e=>{e.preventDefault();drop.style.borderColor='';const f=e.dataTransfer.files[0];if(f)setFile(f,key,kind,drop)};
+}
+function setFile(f,key,kind,drop){
+  files[key]=f;drop.classList.add('has');
+  drop.querySelector('.f').textContent=f.name+' · '+(f.size/1024).toFixed(0)+' KB';
+  drop.querySelector('.t').textContent='✓ đã chọn';
+  checkReady();
+}
+bindDrop('#dropXlsx','#inXlsx','xlsx','xlsx');
+bindDrop('#dropCsv','#inCsv','csv','csv');
+function checkReady(){$('#btnRun').disabled=!(files.xlsx&&files.csv&&pyodide)}
+
+// load pyodide + engine
+let PYCODE='';
+async function boot(){
+  try{
+    PYCODE=await (await fetch('engine_bundle.py')).text();
+  }catch(e){ PYCODE=window.__ENGINE__||''; }
+  pyodide=await loadPyodide();
+  await pyodide.loadPackage(['openpyxl']);
+  pyodide.runPython(PYCODE);
+  $('#engineBadge').textContent='✓ engine sẵn sàng';
+  $('#engineBadge').style.color='var(--ok)';
+  $('#engineBadge').style.borderColor='var(--line2)';
+  checkReady();
+}
+boot();
+
+const fmt=n=>n==null?'—':Number(n).toLocaleString('vi-VN');
+
+$('#btnRun').onclick=async()=>{
+  $('#err').classList.remove('show');
+  const btn=$('#btnRun');btn.disabled=true;
+  $('#status').innerHTML='<span class="spinner"></span>đang đọc & xử lý…';
+  try{
+    const xb=new Uint8Array(await files.xlsx.arrayBuffer());
+    const cb=new Uint8Array(await files.csv.arrayBuffer());
+    pyodide.globals.set('XLSX_BYTES',xb);
+    pyodide.globals.set('CSV_BYTES',cb);
+    pyodide.globals.set('P_UP',parseFloat($('#pUp').value)/100);
+    pyodide.globals.set('P_DOWN',parseFloat($('#pDown').value)/100);
+    pyodide.globals.set('P_RATIO',parseFloat($('#pRatio').value));
+    pyodide.globals.set('P_ROUND',parseInt($('#pRound').value));
+    pyodide.globals.set('P_CLEAR',opts.clear);
+    pyodide.globals.set('P_UNLOCK',opts.unlock);
+    const out=pyodide.runPython('process_all()').toJs({dict_converter:Object.fromEntries});
+    lastResult=out;
+    render(out);
+    $('#status').textContent='✓ hoàn tất';
+  }catch(e){
+    $('#err').textContent='Lỗi: '+(e.message||e);
+    $('#err').classList.add('show');
+    $('#status').textContent='';
+  }
+  btn.disabled=false;
+};
+
+function b64toBlob(b64,type){
+  const bin=atob(b64);const arr=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+  return new Blob([arr],{type});
+}
+
+function render(r){
+  const s=r.stats;
+  $('#results').classList.add('show');
+  // stats
+  const cards=[
+    ['Tổng dòng',fmt(s.total_rows),''],
+    ['SKU khớp giá',fmt(s.matched),'ok'],
+    ['Dòng điều chỉnh',fmt(s.adjustments),''],
+    ['SP trong batch',s.products_in_batch+' / '+s.products,''],
+    ['Nhóm cần quyết định',fmt(s.unresolved_groups),s.unresolved_groups?'bad':'ok'],
+    ['Cảnh báo tồn kho',fmt(s.stock_warnings),s.stock_warnings?'warn':'ok'],
+    ['SKU CSV ko khớp',fmt(s.unmatched_csv_skus),s.unmatched_csv_skus?'warn':''],
+    ['Chế độ',s.partial_mode?'Partial':'Full list','']
+  ];
+  $('#stats').innerHTML=cards.map(c=>
+    `<div class="stat ${c[2]}"><div class="v">${c[1]}</div><div class="l">${c[0]}</div></div>`).join('');
+
+  // downloads
+  const xlsxBlob=b64toBlob(r.import_b64,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  const repBlob=b64toBlob(r.report_b64,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  const u1=URL.createObjectURL(xlsxBlob),u2=URL.createObjectURL(repBlob);
+  $('#dl').innerHTML=`
+    <a class="dlbtn" href="${u1}" download="import_shopee.xlsx">
+      <div class="ic">⬇</div><div><div class="t">File import Shopee</div>
+      <div class="s">Tải lên thẳng Shopee Seller</div></div></a>
+    <a class="dlbtn alt" href="${u2}" download="bao_cao_dieu_chinh.xlsx">
+      <div class="ic">📋</div><div><div class="t">Báo cáo điều chỉnh</div>
+      <div class="s">Chi tiết thay đổi · cảnh báo</div></div></a>`;
+
+  // unresolved
+  renderSec('#secUnresolved','⚠️ Nhóm cần bạn quyết định',r.unresolved,'bad',
+    ['Mã SP','Biến thể','Min','Max','Tỉ lệ','Ghi chú'],
+    g=>`<td>${g.product}</td><td class="num">${g.n_variations}</td>
+        <td class="num">${fmt(g.min_price)}</td><td class="num">${fmt(g.max_price)}</td>
+        <td class="num">${g.ratio?g.ratio.toFixed(2)+'×':'—'}</td><td class="mut">${g.note}</td>`,
+    'Tất cả nhóm đều xử lý được trong giới hạn ✓');
+
+  // stock warnings
+  renderSec('#secStock','📦 Cảnh báo tồn kho',r.stock_warnings,'warn',
+    ['Dòng','Mã SP','SKU','SL','Loại'],
+    w=>`<td class="num">${w.row}</td><td>${w.product}</td><td>${w.sku}</td>
+        <td class="num">${w.stock??'—'}</td>
+        <td><span class="pill">${w.kind==='circle_nonzero'?'⭕ SL≠0':'SL=0'}</span></td>`,
+    'Không có cảnh báo tồn kho ✓');
+
+  // adjustments (limit display 300)
+  const adj=r.adjustments.slice(0,300);
+  renderSec('#secAdjust',`✏️ Danh sách điều chỉnh${r.adjustments.length>300?' (300 dòng đầu)':''}`,adj,'',
+    ['Dòng','Mã SP','SKU','Giá cũ','Giá cuối','Δ','Lý do'],
+    a=>{const d=(a.old_price!=null&&a.final_price!=null)?a.final_price-a.old_price:null;
+      const cls=d>0?'up':(d<0?'down':'mut');
+      return `<td class="num">${a.row}</td><td>${a.product}</td><td>${a.sku}</td>
+        <td class="num">${fmt(a.old_price)}</td><td class="num">${fmt(a.final_price)}</td>
+        <td class="num ${cls}">${d==null?'—':(d>0?'+':'')+fmt(d)}</td><td class="mut">${a.reason}</td>`;},
+    'Không có điều chỉnh');
+}
+
+function renderSec(sel,title,rows,cntcls,heads,rowfn,emptyMsg){
+  const n=rows.length;
+  let html=`<h4>${title}<span class="cnt ${n?cntcls:''}">${n}</span></h4>`;
+  if(!n){html+=`<div class="tbl"><div class="empty">${emptyMsg}</div></div>`;}
+  else{
+    html+=`<div class="tbl"><div class="tscroll"><table><thead><tr>${
+      heads.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${
+      rows.map(r=>`<tr>${rowfn(r)}</tr>`).join('')}</tbody></table></div></div>`;
+  }
+  $(sel).innerHTML=html;
+}
+</script>
+</body>
+</html>
