@@ -1,0 +1,1963 @@
+<!DOCTYPE html>
+<!--
+============================================================================
+  SHOPEE PRICE SYNC — APP VERSION v1.10.4
+============================================================================
+  PROMPT CHO AI (đọc để làm tiếp, tiết kiệm token):
+
+  Đây là tool 1-file đồng bộ giá Shopee, chạy 100% trên trình duyệt bằng
+  Pyodide (openpyxl). KHÔNG có backend. Engine Python nhúng trong thẻ
+  <script id="engineSource" type="text/python"> ngay trong file này; JS đọc
+  textContent của thẻ đó rồi chạy pyodide.runPython(). Không fetch file ngoài.
+
+  CHỨC NĂNG: đọc xlsx Shopee (data từ dòng 7; cột A=Mã SP, C=Mã phân loại,
+  F=SKU, G=Giá, I=Số lượng) + CSV giá mới (cột "MÃ NỘI BỘ", "GIÁ PEE").
+  Vlookup theo SKU, áp giá, giải ràng buộc max/min<=5x mỗi nhóm Mã SP
+  (tăng tối đa +50%, giảm tối đa -2%, ưu tiên xê dịch ít nhất), làm tròn
+  nghìn, ⭕=max nhóm, chế độ partial xoá giá SP ngoài batch. CHỈ sửa cột G.
+  Xuất import_shopee.xlsx + báo cáo 5 sheet. Tự sửa lỗi XML Shopee
+  activePane="bottom_left".
+
+  HÀM JS->PY: process_all() đọc globals XLSX_BYTES, CSV_BYTES, P_UP, P_DOWN,
+  P_RATIO, P_ROUND, P_CLEAR, P_UNLOCK; trả dict có stats + import_b64 +
+  report_b64 + adjustments/unresolved/stock_warnings/unmatched_skus.
+
+  KHI SỬA HTML: luôn TĂNG số version ở dòng "APP VERSION" trên + biến
+  APP_VERSION trong JS (cùng giá trị) + thêm 1 dòng vào CHANGELOG bên dưới.
+  Quy ước version: MAJOR.MINOR.PATCH (sửa nhỏ +PATCH, thêm tính năng +MINOR).
+
+  CHANGELOG:
+    v1.10.4 — Căn phải header cột số (hết lệch); thêm lại cột "Giá sau sửa" ở bảng biến thể.
+    v1.10.3 — Sửa logic loại biến thể: ⭕ phải có ĐỦ data (giá = max nhóm, SL=0) vì Shopee bỏ qua dòng thiếu giá. Thêm cảnh báo khi lưu dòng thiếu mã/giá/SL.
+    v1.10.2 — Google Sheet: chống cache (no-store + timestamp) khi đổi tab/gid; hiện preview header 2 cột đã chọn để kiểm tra đúng cột trước khi xử lý.
+    v1.10.1 — Sửa lệch header bảng biến thể (bỏ sticky cho header bảng con lồng trong bảng nhóm).
+    v1.10.0 — SP không cập nhật: chỉ liệt kê biến thể LỖI (ngoài ngưỡng) kèm cờ quá cao/thấp, không gửi cả 100. Pop-up hiện GIÁ MỚI NHẤT (final_price) thay vì giá cũ.
+    v1.9.2 — Sửa lỗi mất giá khi sửa dòng Cảnh báo tồn kho: StockWarning nay có giá; pop-up điền sẵn giá; ô giá để trống = GIỮ giá tự động (chỉ xoá khi bấm nút loại biến thể).
+    v1.9.1 — Freeze hàng tiêu đề (A2) ở mọi sheet báo cáo để cuộn vẫn thấy tên cột.
+    v1.9.0 — Khi tải từ Google Sheet: chọn cột theo chữ cái (mặc định MÃ NỘI BỘ=B, GIÁ PEE=T) để tránh nhầm 2 cột GIÁ PEE trùng tên. (engine load_price_map nhận sku_col/price_col; glue đọc P_SKU_COL/P_PRICE_COL).
+    v1.8.0 — Thêm ô dán link Google Sheet (tự xuất CSV, cần share công khai); nhận cột MÃ NỘI BỘ/GIÁ PEE như file CSV.
+    v1.7.0 — Mục "SP không cập nhật" cho bung (expand) từng nhóm ra đủ các biến thể; mỗi biến thể bấm sửa được (payload thêm not_updated_variants).
+    v1.6.2 — Sửa triệt để: thêm display:block cho .drop (label inline làm SVG viền chỉ vẽ 1 phần -> "dấu ngoặc" ở góc).
+    v1.6.1 — Sửa viền khung kéo-thả bị đứt góc (dùng SVG border, bo góc đều).
+    v1.6.0 — Pop-up sửa tay (mã biến thể/giá/SL) cho các bảng cảnh báo; hiện giới hạn & đề xuất min/max; nút loại biến thể (⭕+SL0); xuất file đã sửa. (regenerate(overrides_json) trong engine; OV{} trong JS).
+    v1.5.2 — Bảng Giá CSV lỗi thêm Số lượng + cảnh báo MÂU THUẪN khi giá 0 mà SL>0.
+    v1.5.1 — Bảng SKU thiếu giá thêm Số lượng + trạng thái (SL=0 ngừng bán = không lo / còn hàng = cần kiểm tra).
+    v1.5.0 — Chặn giá CSV <=0 / <1000đ (giữ giá cũ + báo cáo); liệt kê SKU thiếu giá. 2 sheet & bảng mới.
+    v1.4.0 — Thêm thẻ "SP được cập nhật/tổng" + bảng SP KHÔNG cập nhật (mã,tên,lý do); SP vượt 5x giữ giá cũ.
+    v1.3.0 — Thêm cột Tên sản phẩm vào báo cáo và bảng trên web.
+    v1.2.3 — Cài openpyxl qua micropip (sửa lỗi "No known package").
+    v1.2.2 — Báo lỗi rõ khi treo lúc tải engine; chờ Pyodide load xong.
+    v1.2.1 — Thêm favicon (logo trên tab trình duyệt).
+    v1.2.0 — Giao diện nền trắng, tông tím SimGlobe; thay logo SimGlobe.
+    v1.1.0 — Thêm hiển thị version, changelog, prompt bàn giao cho AI.
+    v1.0.0 — Bản đầu: engine nhúng 1-file, UI, đồng bộ giá + ràng buộc 5x.
+============================================================================
+-->
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" href="data:image/png;base64,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">
+<title>Shopee Price Sync v1.10.4 — Đồng bộ giá</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f6f5fa; --panel:#ffffff; --panel2:#ffffff; --line:#e6e3ef;
+    --line2:#d6d1e4; --ink:#1f1a33; --muted:#6b6480; --faint:#9a93ad;
+    --brand:#6f5aa8; --brand2:#8b73c9; --ok:#1d9e75; --warn:#b9770b;
+    --bad:#c8344f; --accent:#5b6cff; --r:14px;
+    --shadow:0 10px 30px -14px rgba(95,74,148,.35);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:
+      radial-gradient(1100px 600px at 85% -10%, rgba(139,115,201,.10), transparent 60%),
+      radial-gradient(900px 500px at 0% 110%, rgba(111,90,168,.08), transparent 55%),
+      var(--bg);
+    color:var(--ink); font-family:'Inter',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased; min-height:100vh;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:34px 22px 80px}
+  header.top{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+  .logo{width:48px;height:48px;flex:none;object-fit:contain;display:block}
+  h1{font-family:'Sora';font-weight:700;font-size:25px;margin:0;letter-spacing:-.3px}
+  .sub{color:var(--muted);font-size:13.5px;margin-top:2px}
+  .badge{margin-left:auto;font-size:11.5px;color:var(--faint);border:1px solid var(--line);
+    padding:5px 11px;border-radius:999px}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:26px}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));
+    border:1px solid var(--line);border-radius:var(--r);padding:18px;box-shadow:var(--shadow)}
+  .card h3{font-family:'Sora';font-weight:600;font-size:14.5px;margin:0 0 3px;
+    display:flex;align-items:center;gap:8px}
+  .card .hint{color:var(--faint);font-size:12px;margin:0 0 13px}
+
+  .drop{display:block;border:0;border-radius:12px;padding:24px 16px;text-align:center;
+    cursor:pointer;transition:.18s;background:rgba(139,115,201,.02);
+    background-image:url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='12' ry='12' stroke='%23d6d1e4' stroke-width='2' stroke-dasharray='7%2c6' stroke-dashoffset='0' stroke-linecap='round'/%3e%3c/svg%3e")}
+  .drop:hover{background-image:url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='12' ry='12' stroke='%236f5aa8' stroke-width='2' stroke-dasharray='7%2c6' stroke-linecap='round'/%3e%3c/svg%3e");background-color:rgba(139,115,201,.07)}
+  .drop.has{background-image:url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='12' ry='12' stroke='%231d9e75' stroke-width='2'/%3e%3c/svg%3e");background-color:rgba(29,158,117,.06)}
+  .drop.dragover{background-image:url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='12' ry='12' stroke='%236f5aa8' stroke-width='2' stroke-dasharray='7%2c6' stroke-linecap='round'/%3e%3c/svg%3e");background-color:rgba(139,115,201,.1)}
+  .drop .ic{font-size:26px}
+  .drop .t{font-weight:600;font-size:13.5px;margin-top:8px}
+  .drop .f{color:var(--muted);font-size:12px;margin-top:4px;word-break:break-all}
+  .drop.has .t{color:var(--ok)}
+  input[type=file]{display:none}
+
+  .opts{margin-top:18px;background:linear-gradient(180deg,var(--panel),var(--panel2));
+    border:1px solid var(--line);border-radius:var(--r);padding:18px;box-shadow:var(--shadow)}
+  .opts h3{font-family:'Sora';font-weight:600;font-size:14.5px;margin:0 0 14px}
+  .row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media(max-width:760px){.row{grid-template-columns:1fr 1fr}}
+  .fld label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:6px;font-weight:500}
+  .fld .u{color:var(--faint);font-weight:400}
+  . in{display:flex;align-items:center;border:1px solid var(--line2);border-radius:10px;
+    background:var(--panel);overflow:hidden}
+  .in input{border:0;background:transparent;color:var(--ink);padding:9px 11px;width:100%;
+    font-size:14px;font-family:'Inter';outline:none}
+  .in span{padding:0 11px;color:var(--faint);font-size:12.5px;border-left:1px solid var(--line)}
+  .toggle{display:flex;align-items:center;gap:10px;margin-top:16px;font-size:13px;color:var(--ink)}
+  .sw{width:42px;height:24px;border-radius:999px;background:var(--line2);position:relative;
+    cursor:pointer;transition:.18s;flex:none}
+  .sw.on{background:var(--brand)}
+  .sw::after{content:"";position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;
+    top:3px;left:3px;transition:.18s}
+  .sw.on::after{left:21px}
+  .toggle .d{color:var(--faint);font-size:11.5px}
+
+  .run{margin-top:18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  button.go{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;border:0;
+    font-family:'Sora';font-weight:600;font-size:14.5px;padding:13px 26px;border-radius:12px;
+    cursor:pointer;transition:.16s;box-shadow:0 10px 24px -10px rgba(111,90,168,.55)}
+  button.go:hover{transform:translateY(-1px)}
+  button.go:disabled{opacity:.5;cursor:not-allowed;transform:none}
+  .status{font-size:12.5px;color:var(--muted)}
+  .spinner{width:15px;height:15px;border:2px solid var(--line2);border-top-color:var(--brand);
+    border-radius:50%;display:inline-block;vertical-align:-2px;margin-right:7px;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  .results{margin-top:26px;display:none}
+  .results.show{display:block;animation:fade .4s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .stat{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
+    border-radius:12px;padding:15px 16px}
+  .stat .v{font-family:'Sora';font-weight:700;font-size:24px}
+  .stat .l{font-size:11.5px;color:var(--muted);margin-top:3px}
+  .stat.warn .v{color:var(--warn)} .stat.bad .v{color:var(--bad)} .stat.ok .v{color:var(--ok)}
+
+  .dl{display:flex;gap:12px;margin-top:18px;flex-wrap:wrap}
+  a.dlbtn{flex:1;min-width:220px;text-decoration:none;display:flex;align-items:center;gap:12px;
+    background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line2);
+    border-radius:12px;padding:15px 16px;color:var(--ink);transition:.16s}
+  a.dlbtn:hover{border-color:var(--brand);transform:translateY(-1px)}
+  a.dlbtn .ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex:none;
+    background:rgba(45,212,167,.14);color:var(--ok);font-size:18px}
+  a.dlbtn.alt .ic{background:rgba(91,140,255,.14);color:var(--accent)}
+  a.dlbtn .t{font-weight:600;font-size:13.5px} a.dlbtn .s{font-size:11.5px;color:var(--muted)}
+
+  .section{margin-top:24px}
+  .section h4{font-family:'Sora';font-weight:600;font-size:14px;margin:0 0 4px;display:flex;gap:8px;align-items:center}
+  .section .cnt{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--line);color:var(--muted)}
+  .section .cnt.bad{background:rgba(239,90,111,.18);color:var(--bad)}
+  .section .cnt.warn{background:rgba(245,181,68,.18);color:var(--warn)}
+  .tbl{margin-top:10px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .tscroll{max-height:320px;overflow:auto}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{position:sticky;top:0;z-index:2;background:#f1eef8;color:var(--muted);font-weight:500;text-align:left;
+    padding:10px 12px;font-size:11px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:9px 12px;border-bottom:1px solid var(--line);color:var(--ink);white-space:nowrap}
+  .nu-detail th{position:static;z-index:auto;background:#ece8f6}
+  .nu-detail table{border-collapse:collapse}
+  tr:last-child td{border-bottom:0}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  th.num{text-align:right}
+  .up{color:var(--ok)} .down{color:var(--bad)} .mut{color:var(--faint)}
+  .pill{font-size:10.5px;padding:2px 8px;border-radius:999px;background:var(--line);color:var(--muted)}
+  .empty{padding:18px;text-align:center;color:var(--faint);font-size:12.5px}
+  .err{background:rgba(239,90,111,.1);border:1px solid var(--bad);color:#ffc9d0;
+    padding:12px 14px;border-radius:10px;font-size:13px;margin-top:14px;display:none}
+  .err.show{display:block}
+  footer{margin-top:40px;text-align:center;color:var(--faint);font-size:11.5px}
+  code{background:#f1eef8;border:1px solid var(--line);padding:1px 6px;border-radius:6px;font-size:11.5px}
+  tr.clickable{cursor:pointer} tr.clickable:hover td{background:rgba(139,115,201,.07)}
+  tr.edited td{background:rgba(91,108,255,.08)!important}
+  .modal-bg{position:fixed;inset:0;background:rgba(20,15,40,.45);backdrop-filter:blur(3px);
+    display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
+  .modal-bg.show{display:flex}
+  .modal{background:#fff;border-radius:16px;max-width:520px;width:100%;box-shadow:0 30px 80px -20px rgba(60,40,110,.5);
+    border:1px solid var(--line);max-height:90vh;overflow:auto}
+  .modal .mh{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:12px}
+  .modal .mh h3{font-family:'Sora';font-size:15px;margin:0 0 3px} .modal .mh .mp{font-size:12px;color:var(--muted)}
+  .modal .mx{margin-left:auto;cursor:pointer;color:var(--faint);font-size:20px;line-height:1;border:0;background:none}
+  .modal .mb{padding:18px 20px}
+  .mlimit{background:#f6f4fb;border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:12.5px;margin-bottom:16px;line-height:1.7}
+  .mlimit b{color:var(--brand)}
+  .mrow{margin-bottom:14px} .mrow label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:5px;font-weight:500}
+  .mrow input{width:100%;border:1px solid var(--line2);border-radius:10px;padding:10px 12px;font-size:14px;
+    font-family:'Inter';color:var(--ink);background:#fff;outline:none}
+  .mrow input:focus{border-color:var(--brand)}
+  .mhint{font-size:11px;color:var(--faint);margin-top:4px}
+  .quick{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .quick button{font-size:12px;padding:7px 12px;border-radius:8px;border:1px solid var(--line2);
+    background:#fff;color:var(--ink);cursor:pointer;transition:.15s}
+  .quick button:hover{border-color:var(--brand);background:rgba(139,115,201,.06)}
+  .mfoot{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end}
+  .mfoot button{font-family:'Sora';font-weight:600;font-size:13.5px;padding:10px 18px;border-radius:10px;cursor:pointer;border:0}
+  .mfoot .save{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff}
+  .mfoot .cancel{background:#f1eef8;color:var(--ink)}
+  .editbar{margin-top:16px;background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--brand2);
+    border-radius:var(--r);padding:14px 16px;display:none;align-items:center;gap:14px;box-shadow:var(--shadow)}
+  .editbar.show{display:flex}
+  .editbar .t{font-size:13px;color:var(--ink)} .editbar .t b{color:var(--brand)}
+  .editbar a{margin-left:auto;text-decoration:none;background:linear-gradient(135deg,var(--brand),var(--brand2));
+    color:#fff;font-family:'Sora';font-weight:600;font-size:13px;padding:10px 18px;border-radius:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <img class="logo" alt="SimGlobe" src="data:image/png;base64,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">
+    <div>
+      <h1>Shopee Price Sync <span id="verTag" style="font-family:'Inter';font-size:12px;font-weight:500;color:var(--brand2);border:1px solid var(--line2);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:6px;cursor:pointer" title="Xem changelog"></span></h1>
+      <div class="sub">Đồng bộ giá · ràng buộc max/min 5× · làm tròn nghìn · xuất file import</div>
+    </div>
+    <div class="badge" id="engineBadge">⏳ đang tải engine…</div>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <h3>📊 File Excel Shopee</h3>
+      <p class="hint">File <code>.xlsx</code> Shopee xuất ra (data từ dòng 7). Chỉ cột Giá bị sửa.</p>
+      <label class="drop" id="dropXlsx">
+        <div class="ic">📑</div>
+        <div class="t">Kéo thả hoặc bấm chọn</div>
+        <div class="f" id="fXlsx">chưa có file</div>
+        <input type="file" id="inXlsx" accept=".xlsx">
+      </label>
+    </div>
+    <div class="card">
+      <h3>💲 Bảng giá mới (CSV / Google Sheet)</h3>
+      <p class="hint">Cần 2 cột: <code>MÃ NỘI BỘ</code> và <code>GIÁ PEE</code>. Full list hoặc vài sản phẩm.</p>
+      <label class="drop" id="dropCsv">
+        <div class="ic">🧾</div>
+        <div class="t">Kéo thả hoặc bấm chọn</div>
+        <div class="f" id="fCsv">chưa có file</div>
+        <input type="file" id="inCsv" accept=".csv,.tsv,.txt">
+      </label>
+      <div style="margin-top:12px">
+        <div style="font-size:11.5px;color:var(--muted);margin-bottom:6px;font-weight:500">… hoặc dán link Google Sheet (chia sẻ ở chế độ ai có link cũng xem được):</div>
+        <div style="display:flex;gap:8px">
+          <input id="gsUrl" type="text" placeholder="https://docs.google.com/spreadsheets/d/..."
+            style="flex:1;border:1px solid var(--line2);border-radius:10px;padding:9px 11px;font-size:12.5px;font-family:'Inter';color:var(--ink);background:#fff;outline:none">
+          <button id="gsLoad" style="background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;border:0;font-family:'Sora';font-weight:600;font-size:12.5px;padding:0 16px;border-radius:10px;cursor:pointer;white-space:nowrap">Tải</button>
+        </div>
+        <div id="gsStatus" style="font-size:11.5px;color:var(--faint);margin-top:6px"></div>
+        <div style="display:flex;gap:10px;margin-top:8px">
+          <div style="flex:1">
+            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px">Cột MÃ NỘI BỘ</label>
+            <input id="colSku" type="text" value="B" maxlength="2"
+              style="width:100%;border:1px solid var(--line2);border-radius:8px;padding:7px 10px;font-size:13px;text-transform:uppercase;color:var(--ink);background:#fff;outline:none">
+          </div>
+          <div style="flex:1">
+            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px">Cột GIÁ PEE</label>
+            <input id="colPrice" type="text" value="T" maxlength="2"
+              style="width:100%;border:1px solid var(--line2);border-radius:8px;padding:7px 10px;font-size:13px;text-transform:uppercase;color:var(--ink);background:#fff;outline:none">
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--faint);margin-top:5px">Chọn đúng cột giá mới (vì có thể có 2 cột "GIÁ PEE" trùng tên). Mặc định B và T.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="opts">
+    <h3>⚙️ Tham số xử lý</h3>
+    <div class="row">
+      <div class="fld">
+        <label>Tăng tối đa <span class="u">(% giá)</span></label>
+        <div class="in"><input id="pUp" type="number" value="50" min="0" max="500" step="1"><span>%</span></div>
+      </div>
+      <div class="fld">
+        <label>Giảm tối đa <span class="u">(% giá)</span></label>
+        <div class="in"><input id="pDown" type="number" value="2" min="0" max="100" step="0.5"><span>%</span></div>
+      </div>
+      <div class="fld">
+        <label>Giới hạn max/min</label>
+        <div class="in"><input id="pRatio" type="number" value="5" min="1" max="50" step="0.5"><span>×</span></div>
+      </div>
+      <div class="fld">
+        <label>Làm tròn</label>
+        <div class="in"><input id="pRound" type="number" value="1000" min="1" step="1000"><span>đ</span></div>
+      </div>
+    </div>
+    <div class="toggle">
+      <div class="sw on" id="swClear"></div>
+      <div>Xoá giá sản phẩm ngoài batch
+        <div class="d">Khi CSV chỉ có vài sản phẩm — xoá giá phần còn lại để Shopee bỏ qua (chế độ partial).</div>
+      </div>
+    </div>
+    <div class="toggle">
+      <div class="sw on" id="swUnlock"></div>
+      <div>Mở khoá vùng bảo vệ
+        <div class="d">Bỏ sheet protection để import không bị chặn.</div>
+      </div>
+    </div>
+    <div class="run">
+      <button class="go" id="btnRun" disabled>▶ Xử lý &amp; tạo file</button>
+      <div class="status" id="status"></div>
+    </div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="results" id="results">
+    <div class="stats" id="stats"></div>
+    <div class="dl" id="dl"></div>
+    <div class="editbar" id="editbar">
+      <div class="t">Đã sửa tay <b id="editCount">0</b> dòng. Xuất lại file để áp các thay đổi này.</div>
+      <a id="dlEdited" href="#" download="import_shopee_edited.xlsx">⬇ Xuất file đã sửa</a>
+    </div>
+    <div class="section" id="secNotUpdated"></div>
+    <div class="section" id="secInvalidPrice"></div>
+    <div class="section" id="secMissingPrice"></div>
+    <div class="section" id="secStock"></div>
+    <div class="section" id="secAdjust"></div>
+  </div>
+
+  <div class="modal-bg" id="modalBg">
+    <div class="modal">
+      <div class="mh">
+        <div><h3 id="mTitle">Sửa sản phẩm</h3><div class="mp" id="mSub"></div></div>
+        <button class="mx" id="mClose">×</button>
+      </div>
+      <div class="mb">
+        <span id="mClearPrice" data-on="0" style="display:none"></span>
+        <div class="mlimit" id="mLimit"></div>
+        <div class="quick" id="mQuick"></div>
+        <div class="mrow">
+          <label>Mã biến thể (SKU) — cột F</label>
+          <input id="mSku" type="text">
+          <div class="mhint">Đổi thành ⭕ nếu muốn loại biến thể này khỏi nhóm tính min/max.</div>
+        </div>
+        <div class="mrow">
+          <label>Giá (đồng) — để trống = không cập nhật / bỏ qua</label>
+          <input id="mPrice" type="number" step="1000">
+          <div class="mhint" id="mPriceHint"></div>
+        </div>
+        <div class="mrow">
+          <label>Số lượng — cột I</label>
+          <input id="mStock" type="number" step="1">
+        </div>
+      </div>
+      <div class="mfoot">
+        <button class="cancel" id="mCancel">Huỷ</button>
+        <button class="save" id="mSave">Lưu thay đổi</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="changelogBox" style="display:none;margin-top:26px;background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:var(--r);padding:18px;box-shadow:var(--shadow)">
+    <h3 style="font-family:'Sora';font-weight:600;font-size:14.5px;margin:0 0 12px;display:flex;align-items:center;gap:8px">📝 Changelog</h3>
+    <div id="changelogBody" style="font-size:13px;color:var(--ink);line-height:1.8"></div>
+  </div>
+
+  <footer>
+    <span id="footVer"></span> · Chạy hoàn toàn trên trình duyệt (Pyodide + openpyxl) — không gửi dữ liệu lên server.<br>
+    Mã nguồn mở · có thể host miễn phí trên GitHub Pages.
+  </footer>
+</div>
+
+<script id="engineSource" type="text/python">
+"""
+Shopee Price Sync — Core Engine
+================================
+
+Đồng bộ giá từ bảng giá mới (CSV / Google Sheet) vào file Excel chuẩn Shopee,
+đồng thời tự động xử lý ràng buộc giá max/min không vượt quá 5 lần trong cùng
+một Mã Sản phẩm.
+
+Nguyên tắc (theo yêu cầu người dùng):
+  * Trong 1 Mã Sản phẩm (product group): max / min KHÔNG được vượt quá RATIO_LIMIT (5).
+  * Nếu vi phạm:
+      - Giá thấp hơn ngưỡng min cho phép  -> TĂNG lên (tối đa +MAX_UP_PCT, mặc định 50%).
+      - Giá cao hơn ngưỡng max cho phép    -> GIẢM xuống (tối đa -MAX_DOWN_PCT, mặc định 2%).
+      - Có thể vừa hạ max vừa nâng min để "gặp nhau" cho hài hoà.
+  * Làm tròn tới hàng NGHÌN (10000 ok, 10500 -> 10000 / 11000 tuỳ chiều).
+  * Nếu KHÔNG thể đưa về trong giới hạn -> báo cáo để người dùng tự quyết.
+
+Quy ước cột trong Excel Shopee (data bắt đầu từ DATA_START_ROW):
+  A (1) Mã Sản phẩm     -> nhóm sản phẩm để tính min/max
+  C (3) Mã Phân loại
+  F (6) SKU             -> = "MÃ NỘI BỘ" trong CSV (khoá vlookup)
+  G (7) Giá             -> ô DUY NHẤT được sửa
+  I (9) Số lượng
+
+CSV: chỉ cần 2 cột  "MÃ NỘI BỘ"  và  "GIÁ PEE".
+"""
+
+from __future__ import annotations
+
+import csv
+import io
+import math
+import re
+import shutil
+import tempfile
+import zipfile
+from collections import defaultdict
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
+from typing import Optional
+
+# ----------------------------------------------------------------------------
+# Cấu hình mặc định
+# ----------------------------------------------------------------------------
+
+RATIO_LIMIT = 5.0          # max/min không quá 5 lần
+ROUND_STEP = 1000          # làm tròn hàng nghìn
+DEFAULT_MAX_UP_PCT = 0.50  # tăng tối đa 50% giá bán
+DEFAULT_MAX_DOWN_PCT = 0.02  # giảm tối đa 2% giá bán
+PRICE_FLOOR = 1000         # Shopee: giá tối thiểu
+PRICE_CEIL = 120_000_000   # Shopee: giá tối đa
+
+# Map cột Excel (1-based) — có thể override khi gọi
+COL_PRODUCT = 1   # A Mã Sản phẩm
+COL_NAME = 2      # B Tên Sản phẩm
+COL_VARIATION = 3 # C Mã Phân loại
+COL_SKU = 6       # F SKU
+COL_PRICE = 7     # G Giá  (ô duy nhất được sửa)
+COL_STOCK = 9     # I Số lượng
+DATA_START_ROW = 7
+
+CIRCLE = "⭕"
+
+CSV_SKU_HEADER_CANDIDATES = ["MÃ NỘI BỘ", "MA NOI BO", "SKU"]
+CSV_PRICE_HEADER_CANDIDATES = ["GIÁ PEE", "GIA PEE", "GIÁ\nPEE", "GIÁ \nPEE", "GIÁ"]
+
+
+# ----------------------------------------------------------------------------
+# Sửa lỗi XML của file Shopee (activePane="bottom_left" -> "bottomLeft")
+# openpyxl không đọc được file Shopee export vì lỗi này.
+# ----------------------------------------------------------------------------
+
+_PANE_FIXES = {
+    'activePane="bottom_left"': 'activePane="bottomLeft"',
+    'activePane="bottom_right"': 'activePane="bottomRight"',
+    'activePane="top_left"': 'activePane="topLeft"',
+    'activePane="top_right"': 'activePane="topRight"',
+}
+
+
+def repair_shopee_xlsx(src: str | Path, dst: str | Path) -> bool:
+    """Sửa các giá trị enum XML không hợp lệ trong file Shopee.
+    Trả về True nếu có sửa đổi."""
+    src, dst = Path(src), Path(dst)
+    changed = False
+    with zipfile.ZipFile(src, "r") as zin:
+        names = zin.namelist()
+        buffers = {n: zin.read(n) for n in names}
+    for n, data in buffers.items():
+        if n.startswith("xl/worksheets/") and n.endswith(".xml"):
+            text = data.decode("utf-8", errors="ignore")
+            new = text
+            for bad, good in _PANE_FIXES.items():
+                if bad in new:
+                    new = new.replace(bad, good)
+                    changed = True
+            if new != text:
+                buffers[n] = new.encode("utf-8")
+    with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+        for n, data in buffers.items():
+            zout.writestr(n, data)
+    return changed
+
+
+# ----------------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------------
+
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", " ", str(s)).strip().upper()
+
+
+def round_thousand(x: float, mode: str = "nearest") -> int:
+    """Làm tròn về hàng nghìn.
+    mode: 'nearest' | 'up' | 'down'."""
+    if mode == "up":
+        return int(math.ceil(x / ROUND_STEP) * ROUND_STEP)
+    if mode == "down":
+        return int(math.floor(x / ROUND_STEP) * ROUND_STEP)
+    return int(round(x / ROUND_STEP) * ROUND_STEP)
+
+
+def parse_price(v) -> Optional[float]:
+    if v is None:
+        return None
+    s = str(v).strip()
+    if s == "":
+        return None
+    # bỏ ký tự tiền tệ / khoảng trắng
+    s = re.sub(r"[^\d.,]", "", s)
+    if s == "":
+        return None
+    # Định dạng VN: dấu '.' hoặc ',' thường là phân tách hàng nghìn.
+    # Nếu phần sau dấu cuối cùng có đúng 3 chữ số -> đó là nghìn, bỏ hết separator.
+    last_sep = max(s.rfind("."), s.rfind(","))
+    if last_sep != -1:
+        tail = s[last_sep + 1:]
+        if len(tail) == 3 and tail.isdigit():
+            s = re.sub(r"[.,]", "", s)            # tất cả là phân tách nghìn
+        else:
+            s = s.replace(",", "")                 # ',' nghìn, '.' thập phân
+            # nếu có nhiều dấu '.', chỉ giữ dấu cuối làm thập phân
+            if s.count(".") > 1:
+                parts = s.split(".")
+                s = "".join(parts[:-1]) + "." + parts[-1]
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def is_circle(sku) -> bool:
+    return sku is not None and CIRCLE in str(sku)
+
+
+# ----------------------------------------------------------------------------
+# Đọc bảng giá mới (CSV / TSV) -> dict[sku_norm] = price
+# ----------------------------------------------------------------------------
+
+def load_price_map_from_csv_bytes(raw: bytes, sku_col: int | None = None,
+                                  price_col: int | None = None) -> dict:
+    """Đọc bảng giá. Nếu sku_col/price_col (chỉ số 0-based) được chỉ định thì
+    dùng đúng cột đó (tránh nhầm khi có 2 cột trùng tên 'GIÁ PEE');
+    ngược lại tự dò theo tên header."""
+    text = raw.decode("utf-8-sig", errors="replace")
+    # auto-detect delimiter
+    sample = text[:5000]
+    delim = "\t" if sample.count("\t") > sample.count(",") else ","
+    reader = csv.reader(io.StringIO(text), delimiter=delim)
+    rows = list(reader)
+    if not rows:
+        return {}
+    header = rows[0]
+    norm_header = [_norm(h) for h in header]
+
+    def find_col(cands):
+        for c in cands:
+            cn = _norm(c)
+            for i, h in enumerate(norm_header):
+                if h == cn:
+                    return i
+        # fuzzy contains
+        for c in cands:
+            cn = _norm(c)
+            for i, h in enumerate(norm_header):
+                if cn in h or h in cn:
+                    return i
+        return None
+
+    sku_i = sku_col if sku_col is not None else find_col(CSV_SKU_HEADER_CANDIDATES)
+    price_i = price_col if price_col is not None else find_col(CSV_PRICE_HEADER_CANDIDATES)
+    if sku_i is None or price_i is None:
+        raise ValueError(
+            f"Không tìm thấy cột MÃ NỘI BỘ / GIÁ PEE trong CSV. Header: {header}"
+        )
+    out = {}
+    for r in rows[1:]:
+        if len(r) <= max(sku_i, price_i):
+            continue
+        sku = str(r[sku_i]).strip()
+        if not sku:
+            continue
+        price = parse_price(r[price_i])
+        if price is None:
+            continue
+        out[_norm(sku)] = price
+    return out
+
+
+def load_price_map_from_path(path: str | Path) -> dict:
+    return load_price_map_from_csv_bytes(Path(path).read_bytes())
+
+
+# ----------------------------------------------------------------------------
+# Data classes cho kết quả
+# ----------------------------------------------------------------------------
+
+@dataclass
+class RowRecord:
+    row: int
+    product: str
+    name: str
+    variation: str
+    sku: str
+    is_circle: bool
+    old_price: Optional[float]
+    new_price: Optional[float]      # giá target trước constraint
+    final_price: Optional[float]    # giá sau khi giải constraint + làm tròn
+    stock: Optional[float]
+    matched_csv: bool = False
+    cleared: bool = False           # bị xoá giá (sản phẩm không nằm trong batch)
+
+
+@dataclass
+class GroupReport:
+    product: str
+    name: str
+    n_variations: int
+    min_price: Optional[float]
+    max_price: Optional[float]
+    ratio: Optional[float]
+    resolved: bool
+    note: str = ""
+    in_batch: bool = False
+    updated: bool = False   # có thực sự được cập nhật giá không
+    suggest_min: Optional[float] = None  # đề xuất min nhóm nên đạt
+    suggest_max: Optional[float] = None  # đề xuất max nhóm nên đạt
+    valid_low: Optional[float] = None    # giá thấp nhất hợp lệ cho 1 biến thể
+    valid_high: Optional[float] = None   # giá cao nhất hợp lệ cho 1 biến thể
+
+
+@dataclass
+class Adjustment:
+    row: int
+    product: str
+    name: str
+    sku: str
+    old_price: Optional[float]
+    target_price: Optional[float]
+    final_price: Optional[float]
+    reason: str
+
+
+@dataclass
+class StockWarning:
+    row: int
+    product: str
+    name: str
+    sku: str
+    stock: Optional[float]
+    kind: str  # 'circle_nonzero' | 'noncircle_zero'
+    detail: str
+    old_price: Optional[float] = None
+    new_price: Optional[float] = None
+
+
+@dataclass
+class PriceIssue:
+    row: int
+    product: str
+    name: str
+    sku: str
+    old_price: Optional[float]
+    csv_price: Optional[float]
+    detail: str
+    stock: Optional[float] = None
+    final_price: Optional[float] = None
+
+
+@dataclass
+class SyncResult:
+    rows: list = field(default_factory=list)
+    groups: list = field(default_factory=list)
+    adjustments: list = field(default_factory=list)
+    stock_warnings: list = field(default_factory=list)
+    unresolved: list = field(default_factory=list)   # GroupReport không giải được
+    not_updated: list = field(default_factory=list)   # SP trong batch nhưng KHÔNG được cập nhật
+    invalid_prices: list = field(default_factory=list) # giá CSV <=0 hoặc < ngưỡng -> bỏ qua
+    missing_price_skus: list = field(default_factory=list) # SKU Excel thiếu giá CSV (nhóm trong batch)
+    unmatched_skus: list = field(default_factory=list)
+    stats: dict = field(default_factory=dict)
+
+    def to_dict(self):
+        return {
+            "rows": [asdict(r) for r in self.rows],
+            "groups": [asdict(g) for g in self.groups],
+            "adjustments": [asdict(a) for a in self.adjustments],
+            "stock_warnings": [asdict(s) for s in self.stock_warnings],
+            "unresolved": [asdict(u) for u in self.unresolved],
+            "not_updated": [asdict(u) for u in self.not_updated],
+            "invalid_prices": [asdict(u) for u in self.invalid_prices],
+            "missing_price_skus": [asdict(u) for u in self.missing_price_skus],
+            "unmatched_skus": self.unmatched_skus,
+            "group_info": self._group_info(),
+            "stats": self.stats,
+        }
+
+    def _group_info(self):
+        info = {}
+        for g in self.groups:
+            info[g.product] = {
+                "name": g.name,
+                "min_price": g.min_price,
+                "max_price": g.max_price,
+                "ratio": g.ratio,
+                "suggest_min": g.suggest_min,
+                "suggest_max": g.suggest_max,
+                "valid_low": g.valid_low,
+                "valid_high": g.valid_high,
+                "in_batch": g.in_batch,
+            }
+        return info
+
+
+# ----------------------------------------------------------------------------
+# Bộ giải ràng buộc max/min cho 1 nhóm
+# ----------------------------------------------------------------------------
+
+def solve_group(
+    prices: list[float],
+    max_up_pct: float,
+    max_down_pct: float,
+    ratio_limit: float = RATIO_LIMIT,
+) -> tuple[list[float], bool, str]:
+    """
+    Nhận list giá target (đã làm tròn nghìn) của 1 nhóm.
+    Trả về (final_prices, resolved, note).
+
+    Chiến lược:
+      Nếu max/min <= ratio_limit  -> giữ nguyên.
+      Ngược lại cần thu hẹp khoảng [min, max] sao cho max' <= min' * ratio_limit.
+      Ràng buộc dịch chuyển mỗi item:
+          lower_i = round_up(price_i * (1 - max_down_pct))   # giảm tối đa 2%
+          upper_i = round_down(price_i * (1 + max_up_pct))   # tăng tối đa 50%
+      Ta tìm một dải [L, U] với U <= L*ratio_limit sao cho mỗi giá có thể
+      được kéo vào trong [L, U] (clamp) trong giới hạn cho phép.
+
+      Cách làm "hài hoà": kéo các giá CAO xuống tối đa cho phép, kéo các giá
+      THẤP lên tối đa cho phép, rồi kiểm tra ratio. Nếu vẫn vi phạm thì
+      không giải được -> báo cáo.
+    """
+    if not prices:
+        return [], True, ""
+    n = len(prices)
+    cur = list(prices)
+    mn, mx = min(cur), max(cur)
+    if mn <= 0:
+        return cur, False, "Có giá <= 0"
+    if mx <= mn * ratio_limit + 1e-9:
+        return cur, True, ""  # đã hợp lệ
+
+    # biên cho phép của mỗi item
+    def lo_bound(p):  # giảm tối đa max_down_pct
+        return round_thousand(p * (1 - max_down_pct), "up")  # giảm ít nhất -> làm tròn lên
+
+    def hi_bound(p):  # tăng tối đa max_up_pct
+        return round_thousand(p * (1 + max_up_pct), "down")
+
+    los = [lo_bound(p) for p in cur]  # giá thấp nhất có thể hạ xuống
+    his = [hi_bound(p) for p in cur]  # giá cao nhất có thể nâng lên
+
+    # Khoảng khả thi tổng: giá nhỏ nhất có thể của max-item = its lo
+    # giá lớn nhất có thể của min-item = its hi
+    # Cần tồn tại L, U: L <= U <= L*ratio, và với mỗi i: clamp(cur_i, L, U) khả thi
+    #   -> nếu cur_i > U thì phải hạ về U, cần U >= los[i]
+    #   -> nếu cur_i < L thì phải nâng về L, cần L <= his[i]
+    #
+    # Đặt L = giá nhỏ nhất ta chấp nhận, U = L*ratio.
+    # Thử L chạy từ max(các giá phải nâng) — dùng tìm kiếm trên tập ứng viên.
+
+    candidates = sorted(set(
+        [round_thousand(p, "nearest") for p in cur]
+        + los + his
+        + [round_thousand(mn, "nearest"), round_thousand(mx / ratio_limit, "up")]
+    ))
+
+    best = None
+    for L in candidates:
+        if L < PRICE_FLOOR:
+            continue
+        U = math.floor((L * ratio_limit) / ROUND_STEP) * ROUND_STEP
+        if U < L:
+            continue
+        feasible = True
+        proposal = []
+        cost = 0.0
+        for i, p in enumerate(cur):
+            if p < L:               # cần nâng lên L
+                if L > his[i]:      # vượt trần tăng 50%
+                    feasible = False
+                    break
+                newp = L
+            elif p > U:             # cần hạ xuống U
+                if U < los[i]:      # vượt sàn giảm 2%
+                    feasible = False
+                    break
+                newp = U
+            else:
+                newp = p
+            proposal.append(newp)
+            cost += abs(newp - p)
+        if feasible:
+            if best is None or cost < best[1]:
+                best = (proposal, cost, L, U)
+    if best is None:
+        return cur, False, (
+            f"Không thể đưa max/min về <= {ratio_limit:g} lần "
+            f"trong giới hạn (tăng {max_up_pct*100:.0f}% / giảm {max_down_pct*100:.0f}%)."
+        )
+    proposal = best[0]
+    # đảm bảo làm tròn nghìn
+    proposal = [round_thousand(x, "nearest") for x in proposal]
+    # double-check ratio sau làm tròn
+    m2, x2 = min(proposal), max(proposal)
+    note = ""
+    if x2 > m2 * ratio_limit + 1e-9:
+        return proposal, False, "Sau làm tròn vẫn vượt giới hạn — cần xem lại thủ công."
+    return proposal, True, note
+
+
+# ----------------------------------------------------------------------------
+# Engine chính
+# ----------------------------------------------------------------------------
+
+def run_sync(
+    xlsx_path: str | Path,
+    price_map: dict,
+    *,
+    max_up_pct: float = DEFAULT_MAX_UP_PCT,
+    max_down_pct: float = DEFAULT_MAX_DOWN_PCT,
+    ratio_limit: float = RATIO_LIMIT,
+    clear_unmatched: bool = True,
+    col_product: int = COL_PRODUCT,
+    col_name: int = COL_NAME,
+    col_sku: int = COL_SKU,
+    col_price: int = COL_PRICE,
+    col_stock: int = COL_STOCK,
+    col_variation: int = COL_VARIATION,
+    data_start_row: int = DATA_START_ROW,
+) -> tuple[SyncResult, str]:
+    """
+    Đọc Excel Shopee, áp giá mới, giải ràng buộc, trả về (SyncResult, fixed_xlsx_path).
+    KHÔNG ghi file output ở đây — chỉ tính toán. (writer.py lo phần ghi.)
+    """
+    from openpyxl import load_workbook
+
+    xlsx_path = Path(xlsx_path)
+    tmp_fixed = Path(tempfile.mkdtemp()) / "fixed.xlsx"
+    repair_shopee_xlsx(xlsx_path, tmp_fixed)
+    wb = load_workbook(tmp_fixed)
+    ws = wb.active
+
+    result = SyncResult()
+    rows: list[RowRecord] = []
+
+    # batch = tập product có ít nhất 1 SKU khớp CSV
+    products_in_batch = set()
+    name_map: dict[str, str] = {}
+
+    # 1) Đọc toàn bộ + áp target price
+    for r in range(data_start_row, ws.max_row + 1):
+        pid = ws.cell(r, col_product).value
+        nm = ws.cell(r, col_name).value
+        sku = ws.cell(r, col_sku).value
+        price = parse_price(ws.cell(r, col_price).value)
+        stock = ws.cell(r, col_stock).value
+        var = ws.cell(r, col_variation).value
+        if pid is None and sku is None and price is None and stock is None:
+            continue
+        pid_s = "" if pid is None else str(pid).strip()
+        nm_s = "" if nm is None else str(nm).strip()
+        if pid_s and nm_s and pid_s not in name_map:
+            name_map[pid_s] = nm_s
+        sku_s = "" if sku is None else str(sku).strip()
+        circ = is_circle(sku_s)
+        try:
+            stock_f = float(stock) if stock not in (None, "") else None
+        except (ValueError, TypeError):
+            stock_f = None
+
+        matched = False
+        target = price
+        bad_csv_price = None
+        if not circ and sku_s:
+            key = _norm(sku_s)
+            if key in price_map:
+                csv_price = price_map[key]
+                if csv_price is None or csv_price <= 0 or csv_price < PRICE_FLOOR:
+                    # giá CSV không hợp lệ -> bỏ qua, giữ giá cũ, báo cáo
+                    bad_csv_price = csv_price
+                    target = price
+                else:
+                    target = csv_price
+                    matched = True
+                    products_in_batch.add(pid_s)
+
+        rec = RowRecord(
+            row=r, product=pid_s, name=name_map.get(pid_s, nm_s),
+            variation="" if var is None else str(var),
+            sku=sku_s, is_circle=circ, old_price=price,
+            new_price=target, final_price=target, stock=stock_f,
+            matched_csv=matched,
+        )
+        rows.append(rec)
+        if bad_csv_price is not None:
+            st = stock_f if stock_f is not None else 0
+            if st and st > 0:
+                detail = (f"Giá CSV = {int(bad_csv_price)} nhưng SL={int(st)} (CÒN HÀNG) "
+                          f"— MÂU THUẪN, cần kiểm tra gấp!")
+            else:
+                detail = (f"Giá CSV = {int(bad_csv_price)}, SL=0 (hết hàng) "
+                          f"— hợp lý, giữ giá cũ.")
+            result.invalid_prices.append(PriceIssue(
+                row=r, product=pid_s, name=name_map.get(pid_s, nm_s), sku=sku_s,
+                old_price=price, csv_price=bad_csv_price,
+                detail=detail, stock=stock_f, final_price=price,
+            ))
+
+    def _pname(pid):
+        return name_map.get(pid, "")
+
+    # 2) Xác định chế độ: full-list hay partial-batch
+    #    Nếu clear_unmatched: các product KHÔNG nằm trong batch -> xoá giá (Shopee bỏ qua).
+    #    Product trong batch nhưng có SKU không khớp CSV -> giữ giá cũ làm target.
+    partial_mode = clear_unmatched and len(products_in_batch) < _count_products(rows)
+
+    # 3) Gom nhóm và giải ràng buộc (chỉ với product nằm trong batch / full)
+    groups = defaultdict(list)
+    for rec in rows:
+        groups[rec.product].append(rec)
+
+    for pid, recs in groups.items():
+        in_batch = pid in products_in_batch
+        if partial_mode and not in_batch:
+            # product không điều chỉnh -> sẽ xoá giá ở writer
+            for rec in recs:
+                rec.cleared = True
+                rec.final_price = None
+            result.groups.append(GroupReport(
+                product=pid, name=_pname(pid), n_variations=len(recs),
+                min_price=None, max_price=None, ratio=None,
+                resolved=True, note="Không nằm trong batch — xoá giá để Shopee bỏ qua.",
+                in_batch=False, updated=False,
+            ))
+            continue
+
+        # các SKU non-circle có target để giải ràng buộc
+        priced = [rec for rec in recs if not rec.is_circle and rec.new_price]
+        # làm tròn nghìn cho mọi target trước
+        for rec in priced:
+            rec.new_price = float(round_thousand(rec.new_price, "nearest"))
+            rec.final_price = rec.new_price
+
+        if not priced:
+            gr = GroupReport(
+                product=pid, name=_pname(pid), n_variations=len(recs),
+                min_price=None, max_price=None, ratio=None,
+                resolved=True, note="Không có giá hợp lệ.",
+                in_batch=in_batch, updated=False,
+            )
+            result.groups.append(gr)
+            if in_batch:
+                result.not_updated.append(gr)
+            continue
+
+        target_prices = [rec.new_price for rec in priced]
+        finals, resolved, note = solve_group(
+            target_prices, max_up_pct, max_down_pct, ratio_limit
+        )
+
+        for rec, fp in zip(priced, finals):
+            rec.final_price = float(fp)
+            if rec.old_price is None or abs((rec.final_price or 0) - (rec.old_price or 0)) > 0.5 \
+               or (rec.matched_csv and rec.new_price != rec.old_price):
+                pass  # adjustments tổng hợp ở dưới
+
+        gmin, gmax = min(finals), max(finals)
+        gratio = gmax / gmin if gmin else None
+
+        # đề xuất khoảng hợp lệ dựa trên giá mục tiêu (target) của nhóm
+        tmin, tmax = min(target_prices), max(target_prices)
+        # để hợp lệ: max <= min*ratio. Đề xuất "ép" về khoảng quanh median.
+        s_min = round_thousand(tmax / ratio_limit, "up")    # min tối thiểu nếu giữ max
+        s_max = round_thousand(tmin * ratio_limit, "down")  # max tối đa nếu giữ min
+        v_low = round_thousand(tmax / ratio_limit, "up")    # 1 biến thể không thấp hơn mức này (so với max)
+        v_high = round_thousand(tmin * ratio_limit, "down") # không cao hơn mức này (so với min)
+
+        report = GroupReport(
+            product=pid, name=_pname(pid), n_variations=len(recs),
+            min_price=gmin, max_price=gmax, ratio=gratio,
+            resolved=resolved, note=note,
+            in_batch=in_batch, updated=resolved,
+            suggest_min=s_min, suggest_max=s_max,
+            valid_low=v_low, valid_high=v_high,
+        )
+        result.groups.append(report)
+        if not resolved:
+            result.unresolved.append(report)
+            result.not_updated.append(report)
+            # KHÔNG cập nhật: khôi phục giá cũ cho cả nhóm (kể cả ⭕)
+            for rec in recs:
+                rec.final_price = rec.old_price
+            continue
+
+        # 4) Gán giá cho ⭕ = max của nhóm (sau khi giải)
+        group_max = gmax
+        for rec in recs:
+            if rec.is_circle:
+                rec.final_price = float(group_max)
+
+    # 5) Tổng hợp adjustments (chỉ những dòng thực sự đổi giá)
+    for rec in rows:
+        if rec.cleared:
+            result.adjustments.append(Adjustment(
+                row=rec.row, product=rec.product, name=rec.name, sku=rec.sku,
+                old_price=rec.old_price, target_price=None, final_price=None,
+                reason="Xoá giá (sản phẩm ngoài batch)",
+            ))
+            continue
+        if rec.old_price is None and rec.final_price is None:
+            continue
+        op = rec.old_price
+        fp = rec.final_price
+        if op is None or fp is None or abs(fp - op) > 0.5:
+            reason = _adjust_reason(rec)
+            result.adjustments.append(Adjustment(
+                row=rec.row, product=rec.product, name=rec.name, sku=rec.sku,
+                old_price=op, target_price=rec.new_price, final_price=fp,
+                reason=reason,
+            ))
+
+    # 6) Kiểm tra tồn kho / ⭕
+    for rec in rows:
+        if rec.is_circle:
+            if rec.stock not in (0, 0.0, None):
+                result.stock_warnings.append(StockWarning(
+                    row=rec.row, product=rec.product, name=rec.name, sku=rec.sku, stock=rec.stock,
+                    kind="circle_nonzero",
+                    detail="SKU ⭕ nhưng số lượng khác 0 (cần kiểm tra).",
+                    old_price=rec.old_price, new_price=rec.final_price,
+                ))
+        else:
+            if rec.stock in (0, 0.0):
+                result.stock_warnings.append(StockWarning(
+                    row=rec.row, product=rec.product, name=rec.name, sku=rec.sku, stock=rec.stock,
+                    kind="noncircle_zero",
+                    detail="SKU thường nhưng số lượng = 0 (có thể sai số lượng).",
+                    old_price=rec.old_price, new_price=rec.final_price,
+                ))
+
+    # 7) SKU trong CSV không khớp Excel
+    excel_skus = {_norm(rec.sku) for rec in rows if rec.sku and not rec.is_circle}
+    for k in price_map:
+        if k not in excel_skus:
+            result.unmatched_skus.append(k)
+
+    # 7b) SKU Excel thiếu giá CSV (thuộc nhóm đang được cập nhật)
+    invalid_rows = {pi.row for pi in result.invalid_prices}
+    miss_agg = {}  # key -> [rec đầu tiên, tổng stock]
+    for rec in rows:
+        if rec.is_circle or not rec.sku:
+            continue
+        if rec.product not in products_in_batch:
+            continue  # nhóm ngoài batch -> không xét
+        if rec.matched_csv or rec.row in invalid_rows:
+            continue  # đã có giá mới, hoặc đã báo giá lỗi
+        key = (rec.product, _norm(rec.sku))
+        st = rec.stock if rec.stock is not None else 0
+        if key not in miss_agg:
+            miss_agg[key] = [rec, st]
+        else:
+            miss_agg[key][1] += st
+    for rec, total_stock in miss_agg.values():
+        if total_stock and total_stock > 0:
+            detail = f"Thiếu giá CSV nhưng CÒN HÀNG (SL={int(total_stock)}) — cần kiểm tra."
+        else:
+            detail = "Thiếu giá CSV, SL=0 (đã ngừng bán) — không đáng lo."
+        result.missing_price_skus.append(PriceIssue(
+            row=rec.row, product=rec.product, name=rec.name, sku=rec.sku,
+            old_price=rec.old_price, csv_price=None,
+            detail=detail, stock=total_stock, final_price=rec.final_price,
+        ))
+    # sắp xếp: còn hàng lên đầu
+    result.missing_price_skus.sort(key=lambda p: -(p.stock or 0))
+    result.invalid_prices.sort(key=lambda p: -(p.stock or 0))
+
+    result.rows = rows
+    n_batch = len(products_in_batch)
+    n_updated = sum(1 for g in result.groups if g.in_batch and g.updated)
+    result.stats = {
+        "total_rows": len(rows),
+        "products": _count_products(rows),
+        "products_in_batch": n_batch,
+        "products_updated": n_updated,
+        "products_not_updated": len(result.not_updated),
+        "partial_mode": partial_mode,
+        "matched": sum(1 for r in rows if r.matched_csv),
+        "circle_rows": sum(1 for r in rows if r.is_circle),
+        "adjustments": len(result.adjustments),
+        "unresolved_groups": len(result.unresolved),
+        "stock_warnings": len(result.stock_warnings),
+        "unmatched_csv_skus": len(result.unmatched_skus),
+        "invalid_prices": len(result.invalid_prices),
+        "invalid_prices_instock": sum(1 for p in result.invalid_prices if (p.stock or 0) > 0),
+        "missing_price_skus": len(result.missing_price_skus),
+        "missing_price_instock": sum(1 for p in result.missing_price_skus if (p.stock or 0) > 0),
+        "params": {
+            "ratio_limit": ratio_limit,
+            "max_up_pct": max_up_pct,
+            "max_down_pct": max_down_pct,
+            "round_step": ROUND_STEP,
+            "clear_unmatched": clear_unmatched,
+        },
+    }
+    return result, str(tmp_fixed)
+
+
+def _count_products(rows: list[RowRecord]) -> int:
+    return len({r.product for r in rows if r.product})
+
+
+def _adjust_reason(rec: RowRecord) -> str:
+    op, fp, tp = rec.old_price, rec.final_price, rec.new_price
+    parts = []
+    if rec.is_circle:
+        return "⭕ = max nhóm"
+    if rec.matched_csv:
+        parts.append("Cập nhật giá mới")
+    if tp is not None and fp is not None and abs(fp - tp) > 0.5:
+        if fp > tp:
+            parts.append("nâng min (ràng buộc 5x)")
+        else:
+            parts.append("hạ max (ràng buộc 5x)")
+    elif op is not None and fp is not None and abs(fp - op) > 0.5 and not rec.matched_csv:
+        parts.append("điều chỉnh ràng buộc 5x")
+    return " + ".join(parts) if parts else "Cập nhật"
+
+
+# ====== WRITER ======
+"""
+Shopee Price Sync — Writer
+==========================
+
+Ghi kết quả ra file Excel ĐÚNG ĐỊNH DẠNG Shopee để import lại.
+
+Nguyên tắc an toàn:
+  * CHỈ ghi vào cột Giá (COL_PRICE). Không đụng cột nào khác.
+  * Giữ nguyên toàn bộ header, style, sheet protection của file gốc.
+  * Tô màu nhẹ những ô giá đã thay đổi để người dùng dễ rà soát (tuỳ chọn).
+  * Xoá giá (ô rỗng) cho các sản phẩm ngoài batch -> Shopee hiểu là không sửa.
+
+Đồng thời xuất:
+  * report.xlsx  : các sheet Điều chỉnh / Nhóm vi phạm / Cảnh báo tồn kho.
+"""
+
+
+
+from pathlib import Path
+
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+
+
+# màu highlight
+FILL_UP = PatternFill("solid", fgColor="DCFCE7")      # xanh lá nhạt: tăng
+FILL_DOWN = PatternFill("solid", fgColor="FEE2E2")    # đỏ nhạt: giảm
+FILL_CLEARED = PatternFill("solid", fgColor="F1F5F9") # xám: xoá
+FILL_CIRCLE = PatternFill("solid", fgColor="FEF9C3")  # vàng nhạt: ⭕
+
+
+def write_output(
+    original_xlsx: str | Path,
+    result: SyncResult,
+    out_path: str | Path,
+    *,
+    col_price: int = COL_PRICE,
+    highlight: bool = True,
+    unlock_protection: bool = True,
+    overrides: dict | None = None,
+    col_sku: int = 6,
+    col_stock: int = 9,
+) -> str:
+    """Ghi file import Shopee. Mặc định chỉ sửa cột giá.
+    overrides: {row(int): {'price':int|None,'sku':str,'stock':int}} — ghi đè thủ công
+    từ pop-up (cho phép sửa giá, mã biến thể SKU, số lượng)."""
+    original_xlsx = Path(original_xlsx)
+    out_path = Path(out_path)
+    overrides = overrides or {}
+    # chuẩn hoá key override sang int
+    ov = {}
+    for k, v in overrides.items():
+        try:
+            ov[int(k)] = v
+        except (ValueError, TypeError):
+            pass
+
+    # sửa XML lỗi trước khi mở
+    tmp = out_path.with_suffix(".tmp.xlsx")
+    repair_shopee_xlsx(original_xlsx, tmp)
+    wb = load_workbook(tmp)
+    ws = wb.active
+
+    # Mở khoá để import không bị chặn (Shopee cho phép; người dùng có thể tắt)
+    if unlock_protection and ws.protection.sheet:
+        ws.protection.sheet = False
+
+    FILL_EDIT = PatternFill("solid", fgColor="DBEAFE")  # xanh dương nhạt: sửa tay
+
+    for rec in result.rows:
+        cell = ws.cell(rec.row, col_price)
+        # --- override thủ công từ pop-up ---
+        if rec.row in ov:
+            o = ov[rec.row]
+            if "sku" in o and o["sku"] is not None:
+                ws.cell(rec.row, col_sku).value = o["sku"]
+                if highlight:
+                    ws.cell(rec.row, col_sku).fill = FILL_EDIT
+            if "stock" in o and o["stock"] is not None:
+                try:
+                    ws.cell(rec.row, col_stock).value = int(o["stock"])
+                    if highlight:
+                        ws.cell(rec.row, col_stock).fill = FILL_EDIT
+                except (ValueError, TypeError):
+                    pass
+            # giá: nếu user nhập -> ghi; nếu để trống -> xoá; nếu không có key price -> giữ giá tự động
+            pv = o.get("price", "__keep__")
+            if pv == "__keep__":
+                # không sửa giá tay -> giữ giá tự động như nhánh mặc định
+                if rec.final_price is not None:
+                    cell.value = int(round(rec.final_price))
+                    cell.number_format = "#,##0"
+                elif rec.cleared:
+                    cell.value = None
+            elif pv in (None, "", 0, "0"):
+                cell.value = None
+                if highlight:
+                    cell.fill = FILL_EDIT
+            else:
+                try:
+                    cell.value = int(round(float(pv)))
+                    cell.number_format = "#,##0"
+                    if highlight:
+                        cell.fill = FILL_EDIT
+                except (ValueError, TypeError):
+                    pass
+            continue
+        # --- mặc định ---
+        if rec.cleared:
+            cell.value = None
+            if highlight:
+                cell.fill = FILL_CLEARED
+            continue
+        if rec.final_price is None:
+            continue
+        new_val = int(round(rec.final_price))
+        old_val = None if rec.old_price is None else int(round(rec.old_price))
+        cell.value = new_val
+        cell.number_format = "#,##0"
+        if highlight and old_val is not None and new_val != old_val:
+            if rec.is_circle:
+                cell.fill = FILL_CIRCLE
+            elif new_val > old_val:
+                cell.fill = FILL_UP
+            else:
+                cell.fill = FILL_DOWN
+        elif highlight and rec.is_circle:
+            cell.fill = FILL_CIRCLE
+
+    wb.save(out_path)
+    tmp.unlink(missing_ok=True)
+    return str(out_path)
+
+
+def write_report(result: SyncResult, out_path: str | Path) -> str:
+    """Xuất báo cáo điều chỉnh ra file Excel nhiều sheet."""
+    from openpyxl import Workbook
+
+    out_path = Path(out_path)
+    wb = Workbook()
+
+    head_font = Font(bold=True, color="FFFFFF", name="Arial")
+    head_fill = PatternFill("solid", fgColor="0F172A")
+    thin = Side(style="thin", color="E2E8F0")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def style_header(ws, ncol):
+        for c in range(1, ncol + 1):
+            cell = ws.cell(1, c)
+            cell.font = head_font
+            cell.fill = head_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = border
+        ws.freeze_panes = "A2"  # cố định hàng tiêu đề khi cuộn
+
+    def autosize(ws):
+        for col in ws.columns:
+            width = max((len(str(c.value)) for c in col if c.value is not None), default=8)
+            ws.column_dimensions[col[0].column_letter].width = min(max(width + 2, 10), 60)
+
+    # --- Sheet 1: Tổng quan ---
+    ws = wb.active
+    ws.title = "Tổng quan"
+    s = result.stats
+    overview = [
+        ["Chỉ số", "Giá trị"],
+        ["Tổng dòng dữ liệu", s.get("total_rows")],
+        ["Số sản phẩm", s.get("products")],
+        ["Sản phẩm trong batch", s.get("products_in_batch")],
+        ["Chế độ partial (xoá giá ngoài batch)", "Có" if s.get("partial_mode") else "Không"],
+        ["Số SKU khớp CSV", s.get("matched")],
+        ["Số dòng ⭕", s.get("circle_rows")],
+        ["Số dòng điều chỉnh giá", s.get("adjustments")],
+        ["Nhóm KHÔNG xử lý được", s.get("unresolved_groups")],
+        ["Cảnh báo tồn kho", s.get("stock_warnings")],
+        ["SKU trong CSV không khớp Excel", s.get("unmatched_csv_skus")],
+        ["Giá CSV không hợp lệ (bỏ qua)", s.get("invalid_prices")],
+        ["SKU Excel thiếu giá CSV", s.get("missing_price_skus")],
+        ["Giới hạn tỉ lệ max/min", s.get("params", {}).get("ratio_limit")],
+        ["Tăng tối đa", f"{s.get('params',{}).get('max_up_pct',0)*100:.0f}%"],
+        ["Giảm tối đa", f"{s.get('params',{}).get('max_down_pct',0)*100:.0f}%"],
+    ]
+    for row in overview:
+        ws.append(row)
+    style_header(ws, 2)
+    autosize(ws)
+
+    # --- Sheet 2: Điều chỉnh giá ---
+    ws2 = wb.create_sheet("Điều chỉnh giá")
+    ws2.append(["Dòng", "Mã Sản phẩm", "Tên Sản phẩm", "SKU", "Giá cũ", "Giá mục tiêu", "Giá cuối", "Chênh lệch", "Lý do"])
+    for a in result.adjustments:
+        diff = None
+        if a.old_price is not None and a.final_price is not None:
+            diff = int(a.final_price - a.old_price)
+        ws2.append([
+            a.row, a.product, getattr(a, "name", ""), a.sku,
+            None if a.old_price is None else int(a.old_price),
+            None if a.target_price is None else int(a.target_price),
+            None if a.final_price is None else int(a.final_price),
+            diff, a.reason,
+        ])
+    style_header(ws2, 9)
+    for col in ("E", "F", "G", "H"):
+        for cell in ws2[col][1:]:
+            cell.number_format = "#,##0"
+    autosize(ws2)
+
+    # --- Sheet 3: Nhóm KHÔNG xử lý được ---
+    ws3 = wb.create_sheet("Cần quyết định")
+    ws3.append(["Mã Sản phẩm", "Tên Sản phẩm", "Số biến thể", "Min", "Max", "Tỉ lệ", "Ghi chú"])
+    for g in result.unresolved:
+        ws3.append([
+            g.product, getattr(g, "name", ""), g.n_variations,
+            None if g.min_price is None else int(g.min_price),
+            None if g.max_price is None else int(g.max_price),
+            None if g.ratio is None else round(g.ratio, 2),
+            g.note,
+        ])
+    style_header(ws3, 7)
+    for col in ("D", "E"):
+        for cell in ws3[col][1:]:
+            cell.number_format = "#,##0"
+    autosize(ws3)
+
+    # --- Sheet 4: Cảnh báo tồn kho ---
+    ws4 = wb.create_sheet("Cảnh báo tồn kho")
+    ws4.append(["Dòng", "Mã Sản phẩm", "Tên Sản phẩm", "SKU", "Số lượng", "Loại", "Chi tiết"])
+    for w in result.stock_warnings:
+        ws4.append([w.row, w.product, getattr(w, "name", ""), w.sku, w.stock, w.kind, w.detail])
+    style_header(ws4, 7)
+    autosize(ws4)
+
+    # --- Sheet 5: SKU CSV không khớp ---
+    ws5 = wb.create_sheet("SKU CSV không khớp")
+    ws5.append(["MÃ NỘI BỘ (không thấy trong Excel)"])
+    for k in result.unmatched_skus:
+        ws5.append([k])
+    style_header(ws5, 1)
+    autosize(ws5)
+
+    # --- Sheet 6: Giá CSV không hợp lệ ---
+    ws6 = wb.create_sheet("Giá CSV lỗi")
+    ws6.append(["Dòng", "Mã Sản phẩm", "Tên Sản phẩm", "SKU", "Giá cũ", "Giá CSV", "Số lượng", "Chi tiết"])
+    for p in result.invalid_prices:
+        ws6.append([
+            p.row, p.product, p.name, p.sku,
+            None if p.old_price is None else int(p.old_price),
+            p.csv_price,
+            None if p.stock is None else int(p.stock),
+            p.detail,
+        ])
+    style_header(ws6, 8)
+    for cell in ws6["E"][1:]:
+        cell.number_format = "#,##0"
+    autosize(ws6)
+
+    # --- Sheet 7: SKU thiếu giá CSV ---
+    ws7 = wb.create_sheet("SKU thiếu giá")
+    ws7.append(["Dòng", "Mã Sản phẩm", "Tên Sản phẩm", "SKU", "Giá cũ (giữ nguyên)", "Số lượng", "Chi tiết"])
+    for p in result.missing_price_skus:
+        ws7.append([
+            p.row, p.product, p.name, p.sku,
+            None if p.old_price is None else int(p.old_price),
+            None if p.stock is None else int(p.stock), p.detail,
+        ])
+    style_header(ws7, 7)
+    for cell in ws7["E"][1:]:
+        cell.number_format = "#,##0"
+    autosize(ws7)
+
+    wb.save(out_path)
+    return str(out_path)
+
+
+# ============================================================================
+# Glue cho Pyodide — process_all() được gọi từ JavaScript
+# ============================================================================
+import base64 as _b64
+import tempfile as _tf
+import json as _json
+from pathlib import Path as _P
+
+_STATE = {}  # giữ xin path + result để export lại với overrides
+
+
+def process_all():
+    """Đọc XLSX_BYTES / CSV_BYTES (globals từ JS), trả dict kết quả + file b64."""
+    xb = bytes(XLSX_BYTES)
+    cb = bytes(CSV_BYTES)
+    up = float(P_UP); down = float(P_DOWN); ratio = float(P_RATIO)
+    rstep = int(P_ROUND); clear = bool(P_CLEAR); unlock = bool(P_UNLOCK)
+
+    global ROUND_STEP
+    ROUND_STEP = rstep
+
+    d = _P(_tf.mkdtemp())
+    xin = d / "in.xlsx"
+    xin.write_bytes(xb)
+
+    pm = load_price_map_from_csv_bytes(
+        cb,
+        sku_col=(int(P_SKU_COL) if "P_SKU_COL" in globals() and P_SKU_COL is not None else None),
+        price_col=(int(P_PRICE_COL) if "P_PRICE_COL" in globals() and P_PRICE_COL is not None else None),
+    )
+    result, _ = run_sync(
+        str(xin), pm,
+        max_up_pct=up, max_down_pct=down, ratio_limit=ratio,
+        clear_unmatched=clear,
+    )
+
+    out = d / "import_shopee.xlsx"
+    write_output(str(xin), result, str(out), unlock_protection=unlock)
+    rep = d / "report.xlsx"
+    write_report(result, str(rep))
+
+    # lưu state cho regenerate
+    _STATE["xin"] = str(xin)
+    _STATE["result"] = result
+    _STATE["unlock"] = unlock
+    _STATE["dir"] = str(d)
+
+    payload = result.to_dict()
+    payload["import_b64"] = _b64.b64encode(out.read_bytes()).decode()
+    payload["report_b64"] = _b64.b64encode(rep.read_bytes()).decode()
+
+    # gom CHỈ các biến thể KHÔNG đạt điều kiện (ngoài khoảng hợp lệ) của nhóm không cập nhật
+    gmap = {g.product: g for g in result.groups}
+    nu_products = {g.product for g in result.not_updated}
+    variants = {}
+    for rec in result.rows:
+        if rec.product not in nu_products:
+            continue
+        g = gmap.get(rec.product)
+        lo = getattr(g, "valid_low", None) if g else None
+        hi = getattr(g, "valid_high", None) if g else None
+        price = rec.new_price if rec.new_price is not None else rec.old_price
+        # biến thể "không đạt": giá nằm ngoài [lo, hi]. ⭕ luôn bỏ qua (đã loại).
+        out_of_range = (price is not None and lo and hi and (price < lo - 0.5 or price > hi + 0.5))
+        if rec.is_circle:
+            continue
+        if not out_of_range:
+            continue
+        variants.setdefault(rec.product, []).append({
+            "row": rec.row,
+            "product": rec.product,
+            "name": rec.name,
+            "sku": rec.sku,
+            "is_circle": rec.is_circle,
+            "old_price": rec.old_price,
+            "new_price": rec.new_price,
+            "final_price": rec.final_price,
+            "stock": rec.stock,
+            "too_high": (hi is not None and price is not None and price > hi + 0.5),
+            "too_low": (lo is not None and price is not None and price < lo - 0.5),
+        })
+    payload["not_updated_variants"] = variants
+
+    payload.pop("rows", None)
+    payload.pop("groups", None)
+    return payload
+
+
+def regenerate(overrides_json):
+    """Áp overrides thủ công (sửa từ pop-up) rồi xuất lại file import.
+    overrides_json: chuỗi JSON {row: {price, sku, stock}}. Trả {import_b64, n}."""
+    if "result" not in _STATE:
+        raise RuntimeError("Chưa có dữ liệu. Hãy bấm Xử lý trước.")
+    ov = _json.loads(overrides_json) if overrides_json else {}
+    d = _P(_STATE["dir"])
+    out = d / "import_shopee_edited.xlsx"
+    write_output(
+        _STATE["xin"], _STATE["result"], str(out),
+        unlock_protection=_STATE["unlock"], overrides=ov,
+    )
+    return {
+        "import_b64": _b64.b64encode(out.read_bytes()).decode(),
+        "n": len(ov),
+    }
+
+</script>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js" onerror="var b=document.getElementById('engineBadge');if(b){b.textContent='✗ CDN Pyodide bị chặn — kiểm tra mạng/chặn quảng cáo';b.style.color='var(--bad)';}"></script>
+<script>
+const $=s=>document.querySelector(s);
+
+const APP_VERSION="v1.10.4";
+const CHANGELOG=[
+  ["v1.10.4","Căn phải header cột số; thêm cột Giá sau sửa."],
+  ["v1.10.3","Loại biến thể ⭕ giữ giá=max nhóm (Shopee cần đủ data); cảnh báo dòng thiếu data."],
+  ["v1.10.2","Google Sheet chống cache + xem trước header cột."],
+  ["v1.10.1","Sửa lệch header bảng biến thể."],
+  ["v1.10.0","Chỉ list biến thể lỗi; pop-up hiện giá mới nhất."],
+  ["v1.9.2","Sửa lỗi mất giá khi sửa tồn kho; ô giá trống = giữ giá."],
+  ["v1.9.1","Freeze header mọi sheet báo cáo."],
+  ["v1.9.0","Chọn cột (B/T) khi tải Google Sheet, tránh nhầm 2 cột GIÁ PEE."],
+  ["v1.8.0","Dán link Google Sheet để tải bảng giá (không cần xuất CSV tay)."],
+  ["v1.7.0","SP không cập nhật: bung ra đủ biến thể, sửa từng cái."],
+  ["v1.6.2","Sửa triệt để viền khung kéo-thả (display:block)."],
+  ["v1.6.1","Sửa viền khung kéo-thả bị đứt góc."],
+  ["v1.6.0","Pop-up sửa tay mã/giá/SL + đề xuất min/max; xuất file đã sửa."],
+  ["v1.5.2","Giá CSV lỗi thêm SL; cảnh báo giá 0 mà còn hàng."],
+  ["v1.5.1","SKU thiếu giá thêm số lượng + trạng thái còn hàng/ngừng bán."],
+  ["v1.5.0","Chặn giá CSV<=0/<1000đ; liệt kê SKU thiếu giá."],
+  ["v1.4.0","Thẻ SP được cập nhật + bảng SP không cập nhật; SP vượt 5x giữ giá cũ."],
+  ["v1.3.0","Thêm cột Tên sản phẩm vào báo cáo và bảng."],
+  ["v1.2.3","Cài openpyxl qua micropip (sửa lỗi nạp gói)."],
+  ["v1.2.2","Báo lỗi rõ khi treo lúc tải engine."],
+  ["v1.2.1","Thêm favicon logo trên tab trình duyệt."],
+  ["v1.2.0","Giao diện nền trắng, tông tím SimGlobe; thay logo."],
+  ["v1.1.0","Thêm hiển thị version, changelog, prompt bàn giao cho AI."],
+  ["v1.0.0","Bản đầu: engine nhúng 1-file, UI, đồng bộ giá + ràng buộc 5x."]
+];
+$('#verTag').textContent=APP_VERSION;
+$('#footVer').textContent="Shopee Price Sync "+APP_VERSION;
+$('#changelogBody').innerHTML=CHANGELOG.map(c=>
+  `<div style="margin-bottom:6px"><b style="color:var(--brand2);font-weight:500">${c[0]}</b> — <span style="color:var(--muted)">${c[1]}</span></div>`).join('');
+$('#verTag').onclick=()=>{const b=$('#changelogBox');b.style.display=b.style.display==='none'?'block':'none';if(b.style.display==='block')b.scrollIntoView({behavior:'smooth'})};
+
+let pyodide=null, files={xlsx:null,csv:null}, lastResult=null, csvFromSheet=false;
+const opts={clear:true,unlock:true};
+
+// toggles
+function bindSw(id,key){const el=$(id);el.onclick=()=>{el.classList.toggle('on');opts[key]=el.classList.contains('on')}}
+bindSw('#swClear','clear');bindSw('#swUnlock','unlock');
+
+// file inputs
+function bindDrop(dropId,inputId,key,kind){
+  const drop=$(dropId),inp=$(inputId);
+  inp.onchange=e=>{const f=e.target.files[0];if(f)setFile(f,key,kind,drop)};
+  drop.ondragover=e=>{e.preventDefault();drop.classList.add('dragover')};
+  drop.ondragleave=()=>{drop.classList.remove('dragover')};
+  drop.ondrop=e=>{e.preventDefault();drop.classList.remove('dragover');const f=e.dataTransfer.files[0];if(f)setFile(f,key,kind,drop)};
+}
+function setFile(f,key,kind,drop){
+  files[key]=f;drop.classList.add('has');
+  if(key==='csv')csvFromSheet=false;
+  drop.querySelector('.f').textContent=f.name+' · '+(f.size/1024).toFixed(0)+' KB';
+  drop.querySelector('.t').textContent='✓ đã chọn';
+  checkReady();
+}
+bindDrop('#dropXlsx','#inXlsx','xlsx','xlsx');
+bindDrop('#dropCsv','#inCsv','csv','csv');
+
+// ===== Tải bảng giá từ link Google Sheet =====
+function gsToCsvUrl(url){
+  const m=url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if(!m)return null;
+  const id=m[1];
+  const g=url.match(/[#&?]gid=([0-9]+)/);
+  const gid=g?g[1]:'0';
+  // thêm timestamp chống cache + bắt đúng tab theo gid
+  return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}&_=${Date.now()}`;
+}
+function colLetter(i){let s='';i++;while(i>0){i--;s=String.fromCharCode(65+i%26)+s;i=Math.floor(i/26);}return s;}
+$('#gsLoad').onclick=async()=>{
+  const url=$('#gsUrl').value.trim();
+  const st=$('#gsStatus');
+  if(!url){st.textContent='Hãy dán link Google Sheet.';st.style.color='var(--bad)';return;}
+  const csvUrl=gsToCsvUrl(url);
+  if(!csvUrl){st.textContent='Link không hợp lệ. Cần dạng .../spreadsheets/d/<ID>/...';st.style.color='var(--bad)';return;}
+  st.textContent='⏳ đang tải từ Google Sheet…';st.style.color='var(--muted)';
+  try{
+    const resp=await fetch(csvUrl,{cache:'no-store'});  // không dùng cache
+    if(!resp.ok)throw new Error('HTTP '+resp.status+(resp.status===401||resp.status===403?' — Sheet chưa chia sẻ công khai?':''));
+    const text=await resp.text();
+    if(text.trim().startsWith('<')||text.includes('<!DOCTYPE'))
+      throw new Error('Sheet riêng tư hoặc cần đăng nhập. Hãy đặt chia sẻ "Ai có link cũng xem được".');
+    const blob=new File([text],'google_sheet.csv',{type:'text/csv'});
+    files.csv=blob;
+    csvFromSheet=true;
+    $('#dropCsv').classList.add('has');
+    $('#fCsv').textContent='Google Sheet · '+(text.length/1024).toFixed(0)+' KB';
+    $('#dropCsv').querySelector('.t').textContent='✓ đã tải từ Google Sheet';
+    // hiển thị header để kiểm tra cột đúng chưa
+    const firstLine=text.split(/\r?\n/)[0]||'';
+    const cells=firstLine.split(',');
+    const skuL=$('#colSku').value.trim().toUpperCase()||'B';
+    const priceL=$('#colPrice').value.trim().toUpperCase()||'T';
+    const idx=L=>{let n=0;for(const ch of L)n=n*26+(ch.charCodeAt(0)-64);return n-1;};
+    const skuHdr=cells[idx(skuL)]!==undefined?cells[idx(skuL)].trim():'(không có)';
+    const priceHdr=cells[idx(priceL)]!==undefined?cells[idx(priceL)].trim():'(không có)';
+    st.innerHTML=`✓ đã tải (${text.split(/\r?\n/).length-1} dòng). Kiểm tra cột:<br>`+
+      `• Cột <b>${skuL}</b> (MÃ NỘI BỘ) = "<b>${skuHdr}</b>"<br>`+
+      `• Cột <b>${priceL}</b> (GIÁ PEE) = "<b>${priceHdr}</b>"<br>`+
+      `Nếu sai, đổi chữ cột rồi bấm Tải lại.`;
+    st.style.color='var(--ok)';
+    checkReady();
+  }catch(e){
+    st.textContent='✗ '+(e.message||e);st.style.color='var(--bad)';
+  }
+};
+function checkReady(){$('#btnRun').disabled=!(files.xlsx&&files.csv&&pyodide)}
+
+// load pyodide + engine
+let PYCODE='';
+async function boot(){
+  const badge=$('#engineBadge');
+  try{
+    PYCODE=document.getElementById('engineSource').textContent;
+    if(typeof loadPyodide!=='function'){badge.textContent='✗ không tải được Pyodide (chặn mạng/CDN)';badge.style.color='var(--bad)';return;}
+    badge.textContent='⏳ đang tải Pyodide…';
+    pyodide=await loadPyodide();
+    badge.textContent='⏳ đang tải openpyxl…';
+    await pyodide.loadPackage('micropip');
+    await pyodide.runPythonAsync("import micropip; await micropip.install('openpyxl')");
+    badge.textContent='⏳ đang nạp engine…';
+    pyodide.runPython(PYCODE);
+    badge.textContent='✓ engine sẵn sàng';
+    badge.style.color='var(--ok)';
+    badge.style.borderColor='var(--line2)';
+    checkReady();
+  }catch(e){
+    badge.textContent='✗ lỗi tải engine';
+    badge.style.color='var(--bad)';
+    $('#err').textContent='Lỗi nạp engine: '+(e&&e.message?e.message:e);
+    $('#err').classList.add('show');
+    console.error(e);
+  }
+}
+if(typeof loadPyodide==='function'){boot();}
+else{window.addEventListener('load',()=>setTimeout(boot,300));}
+
+const fmt=n=>n==null?'—':Number(n).toLocaleString('vi-VN');
+
+$('#btnRun').onclick=async()=>{
+  $('#err').classList.remove('show');
+  const btn=$('#btnRun');btn.disabled=true;
+  $('#status').innerHTML='<span class="spinner"></span>đang đọc & xử lý…';
+  try{
+    const xb=new Uint8Array(await files.xlsx.arrayBuffer());
+    const cb=new Uint8Array(await files.csv.arrayBuffer());
+    pyodide.globals.set('XLSX_BYTES',xb);
+    pyodide.globals.set('CSV_BYTES',cb);
+    pyodide.globals.set('P_UP',parseFloat($('#pUp').value)/100);
+    pyodide.globals.set('P_DOWN',parseFloat($('#pDown').value)/100);
+    pyodide.globals.set('P_RATIO',parseFloat($('#pRatio').value));
+    pyodide.globals.set('P_ROUND',parseInt($('#pRound').value));
+    pyodide.globals.set('P_CLEAR',opts.clear);
+    pyodide.globals.set('P_UNLOCK',opts.unlock);
+    // chọn cột theo chữ cái (B,T...) -> chỉ số 0-based; trống = tự dò tên
+    const colToIdx=s=>{s=(s||'').trim().toUpperCase();if(!/^[A-Z]{1,2}$/.test(s))return null;
+      let n=0;for(const ch of s)n=n*26+(ch.charCodeAt(0)-64);return n-1;};
+    pyodide.globals.set('P_SKU_COL',csvFromSheet?colToIdx($('#colSku').value):null);
+    pyodide.globals.set('P_PRICE_COL',csvFromSheet?colToIdx($('#colPrice').value):null);
+    const out=pyodide.runPython('process_all()').toJs({dict_converter:Object.fromEntries});
+    lastResult=out;
+    Object.keys(OV).forEach(k=>delete OV[k]);
+    $('#editbar').classList.remove('show');
+    render(out);
+    $('#status').textContent='✓ hoàn tất';
+  }catch(e){
+    $('#err').textContent='Lỗi: '+(e.message||e);
+    $('#err').classList.add('show');
+    $('#status').textContent='';
+  }
+  btn.disabled=false;
+};
+
+function b64toBlob(b64,type){
+  const bin=atob(b64);const arr=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+  return new Blob([arr],{type});
+}
+
+function render(r){
+  const s=r.stats;
+  $('#results').classList.add('show');
+  buildRowLookup(r);
+  // stats
+  const cards=[
+    ['Tổng dòng',fmt(s.total_rows),''],
+    ['SP được cập nhật',s.products_updated+' / '+s.products_in_batch,s.products_not_updated?'warn':'ok'],
+    ['SKU khớp giá',fmt(s.matched),'ok'],
+    ['Dòng điều chỉnh',fmt(s.adjustments),''],
+    ['SP trong batch',s.products_in_batch+' / '+s.products,''],
+    ['SP KHÔNG cập nhật',fmt(s.products_not_updated),s.products_not_updated?'bad':'ok'],
+    ['Cảnh báo tồn kho',fmt(s.stock_warnings),s.stock_warnings?'warn':'ok'],
+    ['SKU CSV ko khớp',fmt(s.unmatched_csv_skus),s.unmatched_csv_skus?'warn':''],
+    ['Giá CSV lỗi (bỏ qua)',s.invalid_prices_instock+' còn hàng / '+s.invalid_prices,s.invalid_prices_instock?'bad':(s.invalid_prices?'warn':'ok')],
+    ['SKU thiếu giá',s.missing_price_instock+' còn hàng / '+s.missing_price_skus,s.missing_price_instock?'warn':'ok'],
+    ['Chế độ',s.partial_mode?'Partial':'Full list','']
+  ];
+  $('#stats').innerHTML=cards.map(c=>
+    `<div class="stat ${c[2]}"><div class="v">${c[1]}</div><div class="l">${c[0]}</div></div>`).join('');
+
+  // downloads
+  const xlsxBlob=b64toBlob(r.import_b64,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  const repBlob=b64toBlob(r.report_b64,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  const u1=URL.createObjectURL(xlsxBlob),u2=URL.createObjectURL(repBlob);
+  $('#dl').innerHTML=`
+    <a class="dlbtn" href="${u1}" download="import_shopee.xlsx">
+      <div class="ic">⬇</div><div><div class="t">File import Shopee</div>
+      <div class="s">Tải lên thẳng Shopee Seller</div></div></a>
+    <a class="dlbtn alt" href="${u2}" download="bao_cao_dieu_chinh.xlsx">
+      <div class="ic">📋</div><div><div class="t">Báo cáo điều chỉnh</div>
+      <div class="s">Chi tiết thay đổi · cảnh báo</div></div></a>`;
+
+  // unresolved
+  const short=t=>{t=t||'';return t.length>45?t.slice(0,45)+'…':t};
+  renderNotUpdated(r);
+
+  renderSec('#secInvalidPrice','💰 Giá CSV không hợp lệ (đã bỏ qua, giữ giá cũ)',r.invalid_prices,'bad',
+    ['Dòng','Mã SP','Tên SP','SKU','Giá cũ','Giá CSV','SL','Trạng thái'],
+    p=>{const instock=(p.stock||0)>0;
+      return `<td class="num">${p.row}</td><td>${p.product}</td><td title="${(p.name||'').replace(/"/g,'')}">${short(p.name)}</td>
+        <td>${p.sku}</td><td class="num">${fmt(p.old_price)}</td><td class="num down">${fmt(p.csv_price)}</td>
+        <td class="num ${instock?'':'mut'}">${p.stock==null?'—':fmt(p.stock)}</td>
+        <td><span class="pill" style="${instock?'background:rgba(200,52,79,.14);color:var(--bad)':'background:rgba(29,158,117,.14);color:var(--ok)'}">${instock?'⚠ giá 0 mà còn hàng':'SL=0, hết hàng'}</span></td>`;},
+    'Không có giá CSV lỗi ✓',true);
+
+  renderSec('#secMissingPrice','📭 SKU thiếu giá trong CSV (giữ giá cũ)',r.missing_price_skus,'warn',
+    ['Dòng','Mã SP','Tên SP','SKU','Giá cũ','SL','Trạng thái'],
+    p=>{const instock=(p.stock||0)>0;
+      return `<td class="num">${p.row}</td><td>${p.product}</td><td title="${(p.name||'').replace(/"/g,'')}">${short(p.name)}</td>
+        <td>${p.sku}</td><td class="num">${fmt(p.old_price)}</td>
+        <td class="num ${instock?'':'mut'}">${p.stock==null?'—':fmt(p.stock)}</td>
+        <td><span class="pill" style="${instock?'background:rgba(200,52,79,.14);color:var(--bad)':'background:rgba(29,158,117,.14);color:var(--ok)'}">${instock?'còn hàng — kiểm tra':'SL=0, ngừng bán'}</span></td>`;},
+    'Không có SKU thiếu giá ✓',true);
+
+  // stock warnings
+  renderSec('#secStock','📦 Cảnh báo tồn kho',r.stock_warnings,'warn',
+    ['Dòng','Mã SP','Tên SP','SKU','SL','Loại'],
+    w=>`<td class="num">${w.row}</td><td>${w.product}</td><td title="${(w.name||'').replace(/"/g,'')}">${short(w.name)}</td><td>${w.sku}</td>
+        <td class="num">${w.stock??'—'}</td>
+        <td><span class="pill">${w.kind==='circle_nonzero'?'⭕ SL≠0':'SL=0'}</span></td>`,
+    'Không có cảnh báo tồn kho ✓',true);
+
+  // adjustments (limit display 300)
+  const adj=r.adjustments.slice(0,300);
+  renderSec('#secAdjust',`✏️ Danh sách điều chỉnh${r.adjustments.length>300?' (300 dòng đầu)':''}`,adj,'',
+    ['Dòng','Mã SP','Tên SP','SKU','Giá cũ','Giá cuối','Δ','Lý do'],
+    a=>{const d=(a.old_price!=null&&a.final_price!=null)?a.final_price-a.old_price:null;
+      const cls=d>0?'up':(d<0?'down':'mut');
+      return `<td class="num">${a.row}</td><td>${a.product}</td><td title="${(a.name||'').replace(/"/g,'')}">${short(a.name)}</td><td>${a.sku}</td>
+        <td class="num">${fmt(a.old_price)}</td><td class="num">${fmt(a.final_price)}</td>
+        <td class="num ${cls}">${d==null?'—':(d>0?'+':'')+fmt(d)}</td><td class="mut">${a.reason}</td>`;},
+    'Không có điều chỉnh');
+}
+
+function renderSec(sel,title,rows,cntcls,heads,rowfn,emptyMsg,editable){
+  const n=rows.length;
+  const hint=editable&&n?` <span style="font-size:11px;color:var(--faint);font-weight:400">(bấm vào dòng để sửa)</span>`:'';
+  let html=`<h4>${title}<span class="cnt ${n?cntcls:''}">${n}</span>${hint}</h4>`;
+  if(!n){html+=`<div class="tbl"><div class="empty">${emptyMsg}</div></div>`;}
+  else{
+    html+=`<div class="tbl"><div class="tscroll"><table><thead><tr>${
+      heads.map(h=>{const num=/^(Dòng|Giá|SL|Min|Max|Số lượng|Tỉ lệ|Δ|Giá cũ|Giá CSV|Giá mới|Giá hiện tại|Giá cuối|Giá mục tiêu)/.test(h);return `<th class="${num?'num':''}">${h}</th>`;}).join('')}</tr></thead><tbody>${
+      rows.map(r=>{
+        const attr=editable?` class="clickable${OV[r.row]?' edited':''}" data-row="${r.row}" data-product="${r.product}"`:'';
+        return `<tr${attr}>${rowfn(r)}</tr>`;
+      }).join('')}</tbody></table></div></div>`;
+  }
+  const el=$(sel);el.innerHTML=html;
+  if(editable){
+    el.querySelectorAll('tr.clickable').forEach(tr=>{
+      tr.onclick=()=>openEdit(parseInt(tr.dataset.row),tr.dataset.product);
+    });
+  }
+}
+
+// ===== Sửa tay qua pop-up =====
+const OV={};          // {row: {price, sku, stock}}
+let GROUP_INFO={};    // group_info từ payload
+let ROW_LOOKUP={};    // row -> bản ghi gốc (để điền form)
+let NU_VARIANTS={};   // {product: [variant,...]} biến thể nhóm không cập nhật
+
+function buildRowLookup(r){
+  ROW_LOOKUP={};
+  GROUP_INFO=r.group_info||{};
+  NU_VARIANTS=r.not_updated_variants||{};
+  const add=arr=>{(arr||[]).forEach(x=>{if(ROW_LOOKUP[x.row]===undefined)ROW_LOOKUP[x.row]=x;});};
+  add(r.invalid_prices);add(r.missing_price_skus);add(r.stock_warnings);
+  // thêm biến thể của các nhóm không cập nhật
+  Object.values(NU_VARIANTS).forEach(vs=>add(vs));
+}
+
+// Render mục "SP không cập nhật" dạng expand từng nhóm -> liệt kê biến thể
+function renderNotUpdated(r){
+  const groups=r.not_updated||[];
+  const n=groups.length;
+  let html=`<h4>🚫 Sản phẩm KHÔNG được cập nhật<span class="cnt ${n?'bad':''}">${n}</span>`+
+    (n?` <span style="font-size:11px;color:var(--faint);font-weight:400">(bấm vào nhóm để xem các biến thể lỗi cần sửa)</span>`:'')+`</h4>`;
+  if(!n){
+    html+=`<div class="tbl"><div class="empty">Tất cả sản phẩm trong batch đều được cập nhật ✓</div></div>`;
+    $('#secNotUpdated').innerHTML=html;return;
+  }
+  html+=`<div class="tbl"><div class="tscroll"><table><thead><tr>
+    <th></th><th>Mã SP</th><th>Tên SP</th><th>Biến thể lỗi</th><th>Min</th><th>Max</th><th>Tỉ lệ</th><th>Lý do</th>
+    </tr></thead><tbody>`;
+  groups.forEach((g,gi)=>{
+    const vs=NU_VARIANTS[g.product]||[];
+    html+=`<tr class="clickable nu-head" data-gi="${gi}" style="font-weight:500">
+      <td style="width:24px"><span class="nu-arrow" id="arrow-${gi}">▶</span></td>
+      <td>${g.product}</td><td title="${(g.name||'').replace(/"/g,'')}">${shortNU(g.name)}</td>
+      <td class="num">${vs.length}</td>
+      <td class="num">${fmt(g.min_price)}</td><td class="num">${fmt(g.max_price)}</td>
+      <td class="num">${g.ratio?g.ratio.toFixed(2)+'×':'—'}</td><td class="mut">${g.note}</td></tr>`;
+    // hàng con chứa bảng biến thể KHÔNG đạt (ẩn ban đầu)
+    html+=`<tr class="nu-detail" id="detail-${gi}" style="display:none"><td colspan="8" style="padding:0;background:#faf9fd">
+      <div style="padding:8px 10px"><div class="gi-suggest" data-product="${g.product}"></div>
+      <table style="width:100%"><thead><tr>
+        <th class="num">Dòng</th><th>SKU</th><th class="num">Giá hiện tại</th><th class="num">Giá sau sửa</th><th class="num">SL</th><th>Vấn đề</th><th></th>
+      </tr></thead><tbody>`;
+    vs.forEach(v=>{
+      const edited=OV[v.row]?' style="background:rgba(91,108,255,.08)"':'';
+      const cur=(v.final_price!=null?v.final_price:(v.new_price!=null?v.new_price:v.old_price));
+      const ov=OV[v.row];
+      const after=ov?(ov.price!==undefined?ov.price:cur):null;  // giá sau khi user sửa tay
+      const issue=v.too_high?'<span style="color:var(--bad)">quá cao</span>':(v.too_low?'<span style="color:var(--warn)">quá thấp</span>':'ngoài ngưỡng');
+      html+=`<tr class="clickable nu-var" data-row="${v.row}" data-product="${v.product}"${edited}>
+        <td class="num">${v.row}</td><td>${v.is_circle?'⭕':v.sku}</td>
+        <td class="num">${fmt(cur)}</td>
+        <td class="num">${after==null?'<span class="mut">—</span>':'<b style="color:var(--brand)">'+fmt(after)+'</b>'}</td>
+        <td class="num">${v.stock==null?'—':fmt(v.stock)}</td>
+        <td>${issue}</td>
+        <td style="color:var(--brand);font-size:11px">✏️ sửa</td></tr>`;
+    });
+    if(!vs.length)html+=`<tr><td colspan="7" style="padding:10px;color:var(--faint);font-size:12px">Không xác định được biến thể lỗi cụ thể — kiểm tra thủ công.</td></tr>`;
+    html+=`</tbody></table></div></td></tr>`;
+  });
+  html+=`</tbody></table></div></div>`;
+  const el=$('#secNotUpdated');el.innerHTML=html;
+  // gắn sự kiện
+  el.querySelectorAll('tr.nu-head').forEach(tr=>{
+    tr.onclick=()=>{
+      const gi=tr.dataset.gi;const d=$('#detail-'+gi);const a=$('#arrow-'+gi);
+      const open=d.style.display!=='none';
+      d.style.display=open?'none':'table-row';a.textContent=open?'▶':'▼';
+      // điền gợi ý khoảng hợp lệ cho nhóm
+      if(!open){const box=d.querySelector('.gi-suggest');const gi2=GROUP_INFO[box.dataset.product]||{};
+        box.innerHTML=`<div style="font-size:11.5px;color:var(--muted);margin-bottom:6px">`+
+          `Khoảng giá hợp lệ đề xuất cho 1 biến thể: <b style="color:var(--brand)">${fmt(gi2.valid_low)}</b> – <b style="color:var(--brand)">${fmt(gi2.valid_high)}</b>đ. `+
+          `Cách xử lý: hạ giá cái quá cao, hoặc đưa biến thể ngoài ngưỡng về ⭕ + SL 0 để loại.</div>`;}
+    };
+  });
+  el.querySelectorAll('tr.nu-var').forEach(tr=>{
+    tr.onclick=e=>{e.stopPropagation();openEdit(parseInt(tr.dataset.row),tr.dataset.product);};
+  });
+}
+function shortNU(t){t=t||'';return t.length>40?t.slice(0,40)+'…':t;}
+
+function openEdit(row,product){
+  const rec=ROW_LOOKUP[row]||{};
+  const gi=GROUP_INFO[product]||{};
+  $('#mTitle').textContent='Sửa dòng '+row;
+  $('#mSub').textContent=(rec.name||'')+'  ·  Mã SP '+product;
+  // giới hạn + đề xuất
+  $('#mLimit').innerHTML=
+    `Giới hạn nhóm: tỉ lệ max/min ≤ <b>${(GROUP_INFO[product]?'5':'5')}×</b>. `+
+    `Min nhóm hiện tại: <b>${fmt(gi.min_price)}</b> · Max: <b>${fmt(gi.max_price)}</b>`+
+    (gi.ratio?` (tỉ lệ ${gi.ratio.toFixed(2)}×)`:'')+`<br>`+
+    `Khoảng giá hợp lệ đề xuất cho 1 biến thể: <b>${fmt(gi.valid_low)}</b> – <b>${fmt(gi.valid_high)}</b>đ`;
+  // điền giá trị hiện tại (ưu tiên override đã lưu)
+  const cur=OV[row]||{};
+  $('#mSku').value=cur.sku!==undefined?cur.sku:(rec.sku||'');
+  // ưu tiên giá mới nhất sau xử lý (final_price) -> rồi new_price -> old_price
+  const baseP=(rec.final_price!=null?rec.final_price:(rec.new_price!=null?rec.new_price:rec.old_price));
+  $('#mPrice').value=cur.price!==undefined?(cur.price==null?'':cur.price):(baseP!=null?Math.round(baseP):'');
+  $('#mStock').value=cur.stock!==undefined?cur.stock:(rec.stock!=null?Math.round(rec.stock):'');
+  $('#mPriceHint').innerHTML=(gi.valid_low?`Nên trong khoảng ${fmt(gi.valid_low)}–${fmt(gi.valid_high)}đ để hợp lệ. `:'')+
+    `<b>Để trống = giữ nguyên giá hiện tại</b> (không mất giá).`;
+  $('#mClearPrice').dataset.on='0';  // reset cờ xoá giá
+  // giá dùng cho ⭕ = max nhóm (theo quy tắc Shopee: ⭕ mang giá max để tránh đặt nhầm)
+  const circlePrice=(gi.max_price!=null?Math.round(gi.max_price):(gi.valid_high!=null?gi.valid_high:''));
+  // nút nhanh
+  $('#mQuick').innerHTML='';
+  const mkBtn=(label,fn)=>{const b=document.createElement('button');b.textContent=label;b.onclick=fn;$('#mQuick').appendChild(b);};
+  mkBtn('🔴 Loại biến thể (⭕ + SL 0 + giá = max nhóm)',()=>{
+    $('#mSku').value='⭕';$('#mStock').value='0';
+    $('#mPrice').value=circlePrice;   // ⭕ vẫn phải có giá = max nhóm
+    $('#mClearPrice').dataset.on='0';
+  });
+  if(gi.valid_high)mkBtn('Đặt giá = max hợp lệ',()=>{$('#mPrice').value=gi.valid_high;$('#mClearPrice').dataset.on='0';});
+  if(gi.valid_low)mkBtn('Đặt giá = min hợp lệ',()=>{$('#mPrice').value=gi.valid_low;$('#mClearPrice').dataset.on='0';});
+  // nếu user gõ lại giá thì bỏ cờ xoá
+  $('#mPrice').oninput=()=>{if($('#mPrice').value.trim()!=='')$('#mClearPrice').dataset.on='0';};
+  $('#modalBg').classList.add('show');
+  $('#mSave').onclick=()=>saveEdit(row,product);
+}
+function closeModal(){$('#modalBg').classList.remove('show');}
+$('#mClose').onclick=closeModal;$('#mCancel').onclick=closeModal;
+$('#modalBg').onclick=e=>{if(e.target===$('#modalBg'))closeModal();};
+
+function saveEdit(row,product){
+  const sku=$('#mSku').value.trim();
+  const priceRaw=$('#mPrice').value.trim();
+  const stockRaw=$('#mStock').value.trim();
+  const rec=ROW_LOOKUP[row]||{};
+  const o={
+    sku:sku,
+    stock:stockRaw===''?null:Math.round(parseFloat(stockRaw)),
+  };
+  // giá: có nhập -> dùng; để trống -> giữ giá tự động (không gửi key price)
+  if(priceRaw!==''){
+    o.price=Math.round(parseFloat(priceRaw));
+  }else if($('#mClearPrice').dataset.on==='1'){
+    o.price=null;
+  }
+  // Kiểm tra Shopee cần ĐỦ: mã + giá + số lượng. Cảnh báo nếu thiếu.
+  const finalPrice = o.price!==undefined ? o.price :
+    (rec.final_price!=null?rec.final_price:(rec.new_price!=null?rec.new_price:rec.old_price));
+  const finalStock = o.stock!=null ? o.stock : rec.stock;
+  if(!sku){alert('⚠ Mã biến thể (SKU) đang trống. Shopee cần đủ mã + giá + số lượng để cập nhật dòng này.');return;}
+  if(finalPrice==null||finalPrice===0||finalPrice===''){
+    if(!confirm('⚠ Dòng này KHÔNG có giá. Shopee sẽ BỎ QUA, không cập nhật. Vẫn lưu?'))return;
+  }
+  if(finalStock==null){
+    if(!confirm('⚠ Dòng này chưa có số lượng. Shopee cần số lượng để cập nhật. Vẫn lưu?'))return;
+  }
+  OV[row]=o;
+  closeModal();
+  updateEditBar();
+  if(lastResult)render(lastResult);
+}
+
+async function updateEditBar(){
+  const n=Object.keys(OV).length;
+  $('#editCount').textContent=n;
+  $('#editbar').classList.toggle('show',n>0);
+  if(n>0){
+    try{
+      pyodide.globals.set('OV_JSON',JSON.stringify(OV));
+      const out=pyodide.runPython('regenerate(OV_JSON)').toJs({dict_converter:Object.fromEntries});
+      const blob=b64toBlob(out.import_b64,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      $('#dlEdited').href=URL.createObjectURL(blob);
+    }catch(e){console.error(e);}
+  }
+}
+</script>
+</body>
+</html>
